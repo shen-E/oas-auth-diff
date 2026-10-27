@@ -9,6 +9,9 @@ credential and the read scope. This makes the reason for a CI failure inspectabl
 
 ## Install and compare
 
+Use a current MoonBit toolchain. This version is tested with
+`moon 0.1.20261023` / `moonc v0.10.17`; CI records its toolchain version.
+
 ```sh
 git clone https://github.com/shen-E/oas-auth-diff.git
 cd oas-auth-diff
