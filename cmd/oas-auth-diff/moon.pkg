@@ -1,0 +1,15 @@
+import {
+  "shen-E/oas-auth-diff/diff",
+  "shen-E/oas-auth-diff/openapi",
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/x/path",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "process.c" ],
+)
