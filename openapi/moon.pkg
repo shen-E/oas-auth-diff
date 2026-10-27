@@ -1,0 +1,7 @@
+import {
+  "shen-E/oas-auth-diff/logic",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/buffer",
+  "moonbitstack/moonyaml" @yaml,
+}

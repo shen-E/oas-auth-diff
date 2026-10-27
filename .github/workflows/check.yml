@@ -1,0 +1,62 @@
+name: Check authorization changes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    name: Policy and document libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s latest
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+          "$HOME/.moon/bin/moon" update
+      - run: moon version --all
+      - run: moon check --target all
+      - run: moon test --target all
+      - run: moon fmt --check
+
+  command:
+    name: Native CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install MoonBit (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s latest
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+          "$HOME/.moon/bin/moon" update
+      - name: Install MoonBit (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://cli.moonbitlang.com/install/powershell.ps1 -OutFile "$env:RUNNER_TEMP/install-moonbit.ps1"
+          & "$env:RUNNER_TEMP/install-moonbit.ps1"
+          "$env:USERPROFILE/.moon/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$env:USERPROFILE/.moon/bin/moon.exe" update
+      - run: moon version --all
+      - run: moon test --target native
+      - run: moon build cmd/oas-auth-diff --target native
+      - name: Exercise the CLI
+        run: python cmd/oas-auth-diff/smoke.py

@@ -1,0 +1,82 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shen-E/oas-auth-diff/openapi"
+
+import {
+  "moonbitlang/core/debug",
+  "shen-E/oas-auth-diff/logic",
+}
+
+// Values
+pub fn parse_document(String, format~ : InputFormat, source? : String) -> Document raise DocumentError
+
+// Errors
+pub(all) suberror DocumentError {
+  DocumentError(String)
+} derive(Eq, @debug.Debug)
+pub fn DocumentError::equal(Self, Self) -> Bool
+pub fn DocumentError::not_equal(Self, Self) -> Bool
+pub fn DocumentError::output(Self, &Logger) -> Unit
+pub fn DocumentError::to_repr(Self) -> @debug.Repr
+pub fn DocumentError::to_string(Self) -> String
+pub impl Show for DocumentError
+
+// Types and methods
+pub(all) struct Diagnostic {
+  code : String
+  message : String
+  location : Location
+} derive(Eq, ToJson, @debug.Debug)
+pub fn Diagnostic::equal(Self, Self) -> Bool
+pub fn Diagnostic::not_equal(Self, Self) -> Bool
+pub fn Diagnostic::to_json(Self) -> Json
+pub fn Diagnostic::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Document {
+  source : String
+  operations : Array[Operation]
+  schemes : Array[Scheme]
+  diagnostics : Array[Diagnostic]
+} derive(@debug.Debug)
+pub fn Document::to_repr(Self) -> @debug.Repr
+
+pub(all) enum InputFormat {
+  Json
+  Yaml
+} derive(Eq, @debug.Debug)
+pub fn InputFormat::equal(Self, Self) -> Bool
+pub fn InputFormat::not_equal(Self, Self) -> Bool
+pub fn InputFormat::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Location {
+  uri : String
+  pointer : String
+} derive(Eq, ToJson, @debug.Debug)
+pub fn Location::equal(Self, Self) -> Bool
+pub fn Location::not_equal(Self, Self) -> Bool
+pub fn Location::to_json(Self) -> Json
+pub fn Location::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Operation {
+  http_method : String
+  path : String
+  operation_id : String?
+  policy : @logic.Policy?
+  location : Location
+  security_location : Location
+  schemes : Array[String]
+} derive(@debug.Debug)
+pub fn Operation::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Scheme {
+  name : String
+  fingerprint : String
+  location : Location
+} derive(Eq, ToJson, @debug.Debug)
+pub fn Scheme::equal(Self, Self) -> Bool
+pub fn Scheme::not_equal(Self, Self) -> Bool
+pub fn Scheme::to_json(Self) -> Json
+pub fn Scheme::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

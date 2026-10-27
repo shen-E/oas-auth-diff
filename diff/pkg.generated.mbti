@@ -1,0 +1,59 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shen-E/oas-auth-diff/diff"
+
+import {
+  "moonbitlang/core/debug",
+  "shen-E/oas-auth-diff/logic",
+  "shen-E/oas-auth-diff/openapi",
+}
+
+// Values
+pub fn compare(@openapi.Document, @openapi.Document) -> Comparison
+
+pub fn failure_report(Array[@openapi.Diagnostic]) -> Comparison
+
+pub fn render_json(Comparison) -> String
+
+pub fn render_sarif(Comparison) -> String
+
+pub fn render_text(Comparison) -> String
+
+// Errors
+
+// Types and methods
+pub(all) enum ChangeKind {
+  Equivalent
+  Strengthened
+  Weakened
+  Mixed
+  Added
+  Removed
+  Incomparable
+} derive(Eq, @debug.Debug)
+pub fn ChangeKind::equal(Self, Self) -> Bool
+pub fn ChangeKind::not_equal(Self, Self) -> Bool
+pub fn ChangeKind::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Comparison {
+  changes : Array[OperationChange]
+  diagnostics : Array[@openapi.Diagnostic]
+  complete : Bool
+} derive(@debug.Debug)
+pub fn Comparison::exit_code(Self) -> Int32
+pub fn Comparison::to_repr(Self) -> @debug.Repr
+
+pub(all) struct OperationChange {
+  http_method : String
+  path : String
+  operation_id : String?
+  kind : ChangeKind
+  before : @logic.Policy?
+  after : @logic.Policy?
+  witness : @logic.GrantSet?
+  location : @openapi.Location
+} derive(@debug.Debug)
+pub fn OperationChange::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
