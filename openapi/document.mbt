@@ -1,7 +1,7 @@
 ///|
-fn diagnostic(error : AuthError, source : String) -> Diagnostic {
-  let AuthError(code, message, pointer) = error
-  { code, message, location: { uri: source, pointer, }, }
+fn diagnostic(error : AuthError) -> Diagnostic {
+  let AuthError(code, message, location) = error
+  { code, message, location, }
 }
 
 ///|
@@ -26,65 +26,92 @@ fn Context::operation(
   value : Value,
   verb : String,
   path : String,
-  pointer : String,
-  inherited : (@logic.Policy?, Array[String]),
-  inherited_location : String,
+  location : Location,
+  inherited : ParsedSecurity?,
+  inherited_location : Location,
   diagnostics : Array[Diagnostic],
 ) -> Operation {
   let mut operation_id = None
   let mut policy = None
   let mut schemes = []
-  let mut security_location = pointer_key(pointer, "security")
+  let mut security_location = location.key("security")
   try {
-    let obj = object(value, pointer)
+    let obj = object(value, location)
     if obj.contains("$ref") {
       issue(
         "auth.operation",
         "Operation Object does not support $ref; reference a Path Item instead",
-        pointer_key(pointer, "$ref"),
+        location.key("$ref"),
       )
     }
     if obj.get("operationId") is Some(value) {
-      operation_id = Some(string(value, pointer_key(pointer, "operationId")))
+      operation_id = Some(string(value, location.key("operationId")))
     }
     match obj.get("security") {
       Some(value) => {
-        let (parsed, used) = self.security(value, security_location)
-        policy = Some(parsed)
-        schemes = used
+        let parsed = self.security(value, security_location, charge=true)
+        policy = Some(parsed.policy)
+        schemes = parsed.schemes
       }
       None => {
-        policy = inherited.0
-        schemes = inherited.1.copy()
         security_location = inherited_location
+        if inherited is Some(parsed) {
+          self.graph.charge_atoms(parsed.atoms, security_location)
+          policy = Some(parsed.policy)
+          schemes = parsed.schemes.copy()
+        }
       }
     }
   } catch {
-    error => diagnostics.push(diagnostic(error, self.source))
+    error => diagnostics.push(diagnostic(error))
   }
   {
     http_method: verb.to_upper(),
     path,
     operation_id,
     policy,
-    location: { uri: self.source, pointer, },
-    security_location: { uri: self.source, pointer: security_location, },
+    location,
+    security_location,
     schemes,
   }
 }
 
 ///|
-/// Parse one OpenAPI 3.0/3.1 document and extract effective `paths` security.
-///
-/// Syntax, root and version errors raise. Authentication errors are attached to
-/// the document and leave affected operation policies as `None`, so callers can
-/// still compare other operations. Input, reference and policy limits are fixed.
+/// Parse one OpenAPI 3.0/3.1 entry document without loading external sources.
+/// Authentication failures retain unaffected operations and produce diagnostics.
+/// Use `parse_with_loader` to enable controlled relative-file references.
 pub fn parse_document(
   text : String,
   format~ : InputFormat,
   source~ : String = "<input>",
 ) -> Document raise DocumentError {
-  let root = read_input(text, format) catch {
+  parse_entry(text, format~, source~, load=None)
+}
+
+///|
+/// Parse an entry document with caller-controlled relative-file loading.
+///
+/// The callback receives the referring source identity and a percent-decoded
+/// relative path without a fragment. It returns a canonical source identity.
+/// Local references use the current source; security names and inherited global
+/// security retain the entry document's meaning throughout the graph.
+pub fn parse_with_loader(
+  text : String,
+  format~ : InputFormat,
+  source~ : String,
+  load~ : (String, String) -> SourceDocument raise DocumentError,
+) -> Document raise DocumentError {
+  parse_entry(text, format~, source~, load=Some(load))
+}
+
+///|
+fn parse_entry(
+  text : String,
+  format~ : InputFormat,
+  source~ : String,
+  load~ : ((String, String) -> SourceDocument raise DocumentError)?,
+) -> Document raise DocumentError {
+  let (root, nodes) = read_input(text, format) catch {
     DocumentError(message) => raise DocumentError(source + ": " + message)
   }
   let obj = match root {
@@ -105,81 +132,96 @@ pub fn parse_document(
         source + ": openapi must be a 3.0.x or 3.1.x version string",
       )
   }
+  let entry_location : Location = { uri: source, pointer: "", }
+  let graph : Graph = {
+    documents: Map([]),
+    requests: Map([]),
+    load,
+    resource_diagnostics: [],
+    bytes: @utf8.encode(text).length(),
+    nodes,
+    operations: 0,
+    atoms: 0,
+  }
+  graph.documents[source] = {
+    input: { text, format, source, },
+    value: Ok(root),
+  }
   let diagnostics = []
   let declared = try {
     match obj.get("components") {
-      None => {}
+      None => Map([])
       Some(value) => {
-        let components = object(value, "/components")
+        let location = entry_location.key("components")
+        let components = object(value, location)
         match components.get("securitySchemes") {
-          None => {}
-          Some(value) => object(value, "/components/securitySchemes")
+          None => Map([])
+          Some(value) => object(value, location.key("securitySchemes"))
         }
       }
     }
   } catch {
     error => {
-      diagnostics.push(diagnostic(error, source))
-      {}
+      diagnostics.push(diagnostic(error))
+      Map([])
     }
   }
-  let context = { root, source, minor, declared, cache: {}, }
-  // Valid unused declarations matter when requirements change between schemes.
-  // Invalid unused declarations do not invalidate unrelated operation analysis.
-  for name in sorted_keys(declared) {
-    ignore(context.scheme(name)) catch {
-      _ => ()
-    }
-  }
+  let context = { source, minor, declared, cache: Map([]), graph, }
   let inherited_location = if obj.contains("security") {
-    "/security"
+    entry_location.key("security")
   } else {
-    ""
+    entry_location
   }
   let inherited = try {
     match obj.get("security") {
-      None => (Some(@logic.Policy::anonymous()), [])
-      Some(value) => {
-        let (policy, used) = context.security(value, "/security")
-        (Some(policy), used)
-      }
+      None =>
+        Some({ policy: @logic.Policy::anonymous(), schemes: [], atoms: 0, })
+      Some(value) => Some(context.security(value, inherited_location))
     }
   } catch {
     error => {
-      diagnostics.push(diagnostic(error, source))
-      (None, [])
+      diagnostics.push(diagnostic(error))
+      None
     }
   }
   let paths = try {
     match obj.get("paths") {
-      Some(value) => object(value, "/paths")
+      Some(value) => object(value, entry_location.key("paths"))
       None => {
         if minor == 0 {
-          issue("auth.required", "OpenAPI 3.0 requires paths", "/paths")
+          issue(
+            "auth.required",
+            "OpenAPI 3.0 requires paths",
+            entry_location.key("paths"),
+          )
         }
-        {}
+        Map([])
       }
     }
   } catch {
     error => {
-      diagnostics.push(diagnostic(error, source))
-      {}
+      diagnostics.push(diagnostic(error))
+      Map([])
     }
   }
   let operations = []
   let methods = [
     "delete", "get", "head", "options", "patch", "post", "put", "trace",
   ]
+  let mut exhausted = false
   for path in sorted_keys(paths) {
+    if exhausted {
+      break
+    }
     if path.has_prefix("x-") {
       continue
     }
-    let pointer = pointer_key("/paths", path)
+    let location = entry_location.key("paths").key(path)
     try {
       if !path.has_prefix("/") {
-        issue("auth.path", "OpenAPI path must begin with /", pointer)
+        issue("auth.path", "OpenAPI path must begin with /", location)
       }
-      let (item, location) = context.resolve(paths[path], pointer)
+      let (item, resolved_location) = graph.resolve(paths[path], location)
       for key in item.keys() {
         if !methods.contains(key) &&
           key != "summary" &&
@@ -190,18 +232,27 @@ pub fn parse_document(
           issue(
             "ref.target",
             "Unsupported Path Item field: " + key,
-            pointer_key(location, key),
+            resolved_location.key(key),
           )
         }
       }
       for verb in methods {
         if item.get(verb) is Some(value) {
+          if graph.operations >= 10000 {
+            exhausted = true
+            issue(
+              "resource.operations",
+              "Extraction exceeds 10000 operations",
+              resolved_location.key(verb),
+            )
+          }
+          graph.operations += 1
           operations.push(
             context.operation(
               value,
               verb,
               path,
-              pointer_key(location, verb),
+              resolved_location.key(verb),
               inherited,
               inherited_location,
               diagnostics,
@@ -210,7 +261,21 @@ pub fn parse_document(
         }
       }
     } catch {
-      error => diagnostics.push(diagnostic(error, source))
+      error => diagnostics.push(diagnostic(error))
+    }
+  }
+  // Export local unused declarations without implicitly reading more files.
+  // Used external declarations have already been loaded and cached above.
+  for name in sorted_keys(declared) {
+    ignore(context.scheme(name, external=false)) catch {
+      _ => ()
+    }
+  }
+  for item in graph.resource_diagnostics {
+    if !diagnostics.any(existing => {
+        existing.code == item.code && existing.location == item.location
+      }) {
+      diagnostics.push(item)
     }
   }
   let schemes = []

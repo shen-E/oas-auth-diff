@@ -27,7 +27,7 @@ fn canonical(value : Value) -> String {
 fn endpoint(
   obj : Map[String, Value],
   key : String,
-  pointer : String,
+  pointer : Location,
 ) -> Value raise AuthError {
   let url = required_string(obj, key, pointer)
   let prefix = if url.has_prefix("https://") {
@@ -38,7 +38,7 @@ fn endpoint(
     issue(
       "auth.url",
       "Authentication endpoints require absolute http/https URLs; relative URL resolution is unsupported",
-      pointer_key(pointer, key),
+      pointer.key(key),
     )
     abort("unreachable")
   }
@@ -50,11 +50,7 @@ fn endpoint(
     .unwrap_or("")
   if authority.is_empty() ||
     url.iter().any(char => char.to_int() <= 32 || char.to_int() == 127) {
-    issue(
-      "auth.url",
-      "Invalid authentication endpoint URL",
-      pointer_key(pointer, key),
-    )
+    issue("auth.url", "Invalid authentication endpoint URL", pointer.key(key))
   }
   Str(url)
 }
@@ -63,11 +59,15 @@ fn endpoint(
 fn Context::scheme(
   self : Context,
   name : String,
+  external~ : Bool = true,
 ) -> ParsedScheme raise AuthError {
   if self.cache.get(name) is Some(cached) {
     return cached
   }
-  let pointer = pointer_key("/components/securitySchemes", name)
+  let pointer : Location = {
+    uri: self.source,
+    pointer: pointer_key("/components/securitySchemes", name),
+  }
   let value = match self.declared.get(name) {
     Some(value) => value
     None => {
@@ -75,22 +75,29 @@ fn Context::scheme(
       abort("unreachable")
     }
   }
-  let (obj, location) = self.resolve(value, pointer)
+  let (obj, location) = self.graph.resolve(value, pointer, external~)
   let kind = required_string(obj, "type", location)
   let fingerprint : Map[String, Value] = { "type": Str(kind) }
   let scopes : Map[String, Bool] = Map([])
   match kind {
     "apiKey" => {
-      fingerprint["name"] = Str(required_string(obj, "name", location))
+      let credential_name = required_string(obj, "name", location)
       let where_ = required_string(obj, "in", location)
       if where_ != "query" && where_ != "header" && where_ != "cookie" {
         issue(
           "auth.scheme",
           "apiKey location must be query, header or cookie",
-          pointer_key(location, "in"),
+          location.key("in"),
         )
       }
       fingerprint["in"] = Str(where_)
+      fingerprint["name"] = Str(
+        if where_ == "header" {
+          credential_name.to_lower()
+        } else {
+          credential_name
+        },
+      )
     }
     "http" =>
       fingerprint["scheme"] = Str(
@@ -105,11 +112,11 @@ fn Context::scheme(
         issue(
           "auth.scheme",
           "mutualTLS requires OpenAPI 3.1",
-          pointer_key(location, "type"),
+          location.key("type"),
         )
       }
     "oauth2" => {
-      let flow_location = pointer_key(location, "flows")
+      let flow_location = location.key("flows")
       let flows = match obj.get("flows") {
         Some(value) => object(value, flow_location)
         None => {
@@ -130,11 +137,11 @@ fn Context::scheme(
           issue(
             "auth.scheme",
             "Unknown OAuth flow: " + flow_name,
-            pointer_key(flow_location, flow_name),
+            flow_location.key(flow_name),
           )
         }
         flow_count += 1
-        let at = pointer_key(flow_location, flow_name)
+        let at = flow_location.key(flow_name)
         let flow = object(flows[flow_name], at)
         let selected = Map([])
         if flow_name == "implicit" || flow_name == "authorizationCode" {
@@ -146,7 +153,7 @@ fn Context::scheme(
         if flow.contains("refreshUrl") {
           selected["refreshUrl"] = endpoint(flow, "refreshUrl", at)
         }
-        let scopes_at = pointer_key(at, "scopes")
+        let scopes_at = at.key("scopes")
         let declared = match flow.get("scopes") {
           Some(value) => object(value, scopes_at)
           None => {
@@ -157,7 +164,7 @@ fn Context::scheme(
           }
         }
         for scope, description in declared {
-          let _ = string(description, pointer_key(scopes_at, scope))
+          let _ = string(description, scopes_at.key(scope))
           scopes[scope] = true
         }
         flow_out[flow_name] = Obj(selected)
@@ -171,15 +178,11 @@ fn Context::scheme(
       issue(
         "auth.scheme",
         "Unsupported security scheme type: " + kind,
-        pointer_key(location, "type"),
+        location.key("type"),
       )
   }
   let parsed = {
-    public_scheme: {
-      name,
-      fingerprint: canonical(Obj(fingerprint)),
-      location: { uri: self.source, pointer: location, },
-    },
+    public_scheme: { name, fingerprint: canonical(Obj(fingerprint)), location, },
     kind,
     scopes,
   }
@@ -191,8 +194,9 @@ fn Context::scheme(
 fn Context::security(
   self : Context,
   value : Value,
-  pointer : String,
-) -> (@logic.Policy, Array[String]) raise AuthError {
+  pointer : Location,
+  charge~ : Bool = false,
+) -> ParsedSecurity raise AuthError {
   let requirements = match value {
     Seq(items) => items
     _ => {
@@ -207,7 +211,7 @@ fn Context::security(
   let used = []
   let mut total = 0
   for index, requirement in requirements {
-    let at = pointer_key(pointer, index.to_string())
+    let at = pointer.key(index.to_string())
     let obj = object(requirement, at)
     let atoms = []
     for name in sorted_keys(obj) {
@@ -216,7 +220,7 @@ fn Context::security(
         used.push(name)
       }
       atoms.push(@logic.Credential(name))
-      let names_at = pointer_key(at, name)
+      let names_at = at.key(name)
       let names = match obj[name] {
         Seq(names) => names
         _ => {
@@ -231,13 +235,13 @@ fn Context::security(
         issue("auth.limit", "Security alternative exceeds 1024 atoms", at)
       }
       for i, value in names {
-        let value = string(value, pointer_key(names_at, i.to_string()))
+        let value = string(value, names_at.key(i.to_string()))
         if scheme.kind == "oauth2" || scheme.kind == "openIdConnect" {
           if scheme.kind == "oauth2" && !scheme.scopes.contains(value) {
             issue(
               "auth.scope",
               "Undefined OAuth scope: " + value,
-              pointer_key(names_at, i.to_string()),
+              names_at.key(i.to_string()),
             )
           }
           atoms.push(@logic.Scope(name, value))
@@ -260,9 +264,13 @@ fn Context::security(
     alternatives.push(atoms)
   }
   used.sort()
-  if requirements.is_empty() {
-    (@logic.Policy::anonymous(), used)
-  } else {
-    (@logic.Policy::new(alternatives), used)
+  if charge {
+    self.graph.charge_atoms(total, pointer)
   }
+  let policy = if requirements.is_empty() {
+    @logic.Policy::anonymous()
+  } else {
+    @logic.Policy::new(alternatives)
+  }
+  { policy, schemes: used, atoms: total, }
 }

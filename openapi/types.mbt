@@ -12,6 +12,21 @@ pub extend InputFormat with Debug::{to_repr}
 pub extend InputFormat with Eq::{equal, not_equal}
 
 ///|
+/// One independently encoded source returned by a local document loader.
+/// `source` is its canonical identity, used for locations, caching and cycles.
+pub(all) struct SourceDocument {
+  text : String
+  format : InputFormat
+  source : String
+} derive(Debug, Eq)
+
+///|
+pub extend SourceDocument with Debug::{to_repr}
+
+///|
+pub extend SourceDocument with Eq::{equal, not_equal}
+
+///|
 /// A document URI and an RFC 6901 JSON Pointer. No line is fabricated.
 pub(all) struct Location {
   uri : String
@@ -124,12 +139,13 @@ priv enum Value {
 
 ///|
 priv suberror AuthError {
-  AuthError(String, String, String)
+  AuthError(String, String, Location)
 }
 
 ///|
 priv struct Limits {
   mut nodes : Int32
+  maximum : Int32
 }
 
 ///|
@@ -141,11 +157,42 @@ priv struct ParsedScheme {
 
 ///|
 priv struct Context {
-  root : Value
   source : String
   minor : Int32
   declared : Map[String, Value]
   cache : Map[String, ParsedScheme]
+  graph : Graph
+}
+
+///|
+priv struct ParsedSecurity {
+  policy : @logic.Policy
+  schemes : Array[String]
+  atoms : Int32
+}
+
+///|
+priv struct LoadFailure {
+  code : String
+  message : String
+}
+
+///|
+priv struct CachedDocument {
+  input : SourceDocument
+  value : Result[Value, LoadFailure]
+}
+
+///|
+priv struct Graph {
+  documents : Map[String, CachedDocument]
+  requests : Map[String, Map[String, Result[String, LoadFailure]]]
+  load : ((String, String) -> SourceDocument raise DocumentError)?
+  resource_diagnostics : Array[Diagnostic]
+  mut bytes : Int32
+  mut nodes : Int32
+  mut operations : Int32
+  mut atoms : Int32
 }
 
 ///|
@@ -153,6 +200,11 @@ fn pointer_key(pointer : String, key : String) -> String {
   pointer +
   "/" +
   key.replace_all(old="~", new="~0").replace_all(old="/", new="~1")
+}
+
+///|
+fn Location::key(self : Location, key : String) -> Location {
+  { uri: self.uri, pointer: pointer_key(self.pointer, key), }
 }
 
 ///|
@@ -166,31 +218,31 @@ fn[V] sorted_keys(obj : Map[String, V]) -> Array[String] {
 fn issue(
   code : String,
   message : String,
-  pointer : String,
+  location : Location,
 ) -> Unit raise AuthError {
-  raise AuthError(code, message, pointer)
+  raise AuthError(code, message, location)
 }
 
 ///|
 fn object(
   value : Value,
-  pointer : String,
+  location : Location,
 ) -> Map[String, Value] raise AuthError {
   match value {
     Obj(obj) => obj
     _ => {
-      issue("auth.type", "Expected an object", pointer)
+      issue("auth.type", "Expected an object", location)
       abort("unreachable")
     }
   }
 }
 
 ///|
-fn string(value : Value, pointer : String) -> String raise AuthError {
+fn string(value : Value, location : Location) -> String raise AuthError {
   match value {
     Str(text) => text
     _ => {
-      issue("auth.type", "Expected a string", pointer)
+      issue("auth.type", "Expected a string", location)
       abort("unreachable")
     }
   }
@@ -200,9 +252,9 @@ fn string(value : Value, pointer : String) -> String raise AuthError {
 fn required_string(
   obj : Map[String, Value],
   key : String,
-  pointer : String,
+  at : Location,
 ) -> String raise AuthError {
-  let location = pointer_key(pointer, key)
+  let location = at.key(key)
   match obj.get(key) {
     Some(value) => {
       let value = string(value, location)
