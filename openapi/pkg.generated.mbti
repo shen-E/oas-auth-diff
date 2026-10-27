@@ -66,6 +66,7 @@ pub(all) struct Operation {
   location : Location
   security_location : Location
   schemes : Array[String]
+  scheme_identities : Array[Scheme]
 } derive(@debug.Debug)
 pub fn Operation::to_repr(Self) -> @debug.Repr
 

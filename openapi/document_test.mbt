@@ -227,14 +227,21 @@ test "invalid auth structure is never treated as anonymous" {
 }
 
 ///|
-test "relative authentication endpoints are explicit unsupported analysis" {
+test "relative authentication endpoints require a known HTTP document base" {
   for endpoint in ["/token", "../token", "//auth.example/token", "https://"] {
     let document = parse(
       "{\"openapi\":\"3.1.1\",\"components\":{\"securitySchemes\":{\"OAuth\":{\"type\":\"oauth2\",\"flows\":{\"clientCredentials\":{\"tokenUrl\":" +
       Json::string(endpoint).stringify() +
       ",\"scopes\":{}}}}}},\"paths\":{\"/pets\":{\"get\":{\"security\":[{\"OAuth\":[]}]}}}}",
     )
-    assert_eq(document.diagnostics[0].code, "auth.url")
+    assert_eq(
+      document.diagnostics[0].code,
+      if endpoint == "https://" {
+        "auth.url"
+      } else {
+        "auth.base"
+      },
+    )
     assert_true(document.operations[0].policy is None)
   }
 }

@@ -45,10 +45,8 @@ name/location, HTTP scheme, OAuth flow endpoints, and OpenID URL are part of
 that identity. Descriptions, bearer-format hints, scope descriptions, and
 ordering are not. Renamed or missing declarations are not automatically paired.
 API-key header names compare without case; query and cookie names retain case.
-OAuth authorization/token/refresh endpoints and the OpenID URL must be absolute
-HTTP or HTTPS URLs. Relative authentication URLs depend on server resolution and
-make affected operations incomplete. An unused invalid declaration does
-not block analysis.
+OAuth authorization/token/refresh endpoints and the OpenID URL resolve to HTTP
+or HTTPS URLs. An unused invalid declaration does not block analysis.
 Even a removed requirement is conservatively incomparable if its scheme has
 no matching declaration in the other document.
 Unused definitions do not trigger external file loading. If a removed
@@ -59,6 +57,48 @@ is conservatively incomplete.
 A diagnostic marks analysis incomplete and gives exit code 2 priority. Findings
 on other operations remain available. This avoids treating malformed or
 unsupported authentication as a successful check.
+
+## Relative authentication addresses
+
+Endpoint resolution follows [OpenAPI's relative API URL
+rules](https://spec.openapis.org/oas/v3.1.1.html#relative-references-in-api-urls).
+For each operation, its `servers` overrides the path item's list, which in turn
+overrides the entry document's list. An absent or empty effective list supplies
+the default `/` server. Referenced path items retain the source of their server
+declaration. Relative servers require an HTTP(S) retrieval URI for that
+declaration; a CLI `file:` URI supplies no deployment origin and produces
+`auth.base`. There is no network discovery.
+
+For relative endpoints, each effective server generates a complete tuple of
+OAuth flow addresses or an OpenID address. The tuple set is sorted and
+deduplicated. Equivalent absolute/relative spellings and reordered servers
+compare equally. A changed endpoint set remains incomparable, rather than
+being interpreted as a permission change. Absolute endpoints do not depend
+on server declarations. `Operation.scheme_identities` exposes the resolved
+credentials used by comparison; document-level declarations alone do not
+capture operation-specific server overrides.
+
+Every variable used in a server URL requires a string `default` and a nonempty
+string `enum` containing it. All combinations are expanded, and the default
+combination is retained in the identity. Changing an enum domain or its default
+can therefore change identity. Unrestricted variables produce `auth.variable`;
+the analyzer does not substitute only the default and call the whole domain
+equivalent.
+
+URL resolution uses RFC 3986 path merging and dot-segment removal. Scheme and
+host case, default ports, IPv6 spelling, and percent-escape hex case are
+normalized. Reserved percent escapes remain encoded. Supported authorities
+are ASCII DNS/IDNA names, IPv4, and bracketed IPv6. User information, fragments,
+raw Unicode, scoped IPv6, IPvFuture, spaces, controls, malformed escapes,
+backslashes, and non-HTTP schemes produce `auth.url` diagnostics.
+
+Expansion allows 16 variables per server and 64 server variants per operation.
+An entry permits 100,000 used scheme/server tuple instances, charged even when
+cached. URI text is limited to 8,192 UTF-8 bytes, one resolved identity to 1 MiB,
+and the entry's used identity strings to 32 MiB. Exceeding these limits marks
+affected analysis incomplete. A separate budget of 100,000 attempts and 8 MiB
+collects unused local identities when available; its exhaustion does not
+consume the used-identity budget or load external files.
 
 ## Input boundaries
 

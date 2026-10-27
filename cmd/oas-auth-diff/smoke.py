@@ -1,5 +1,6 @@
 """Exercise the built CLI as a subprocess; no compiler or registry orchestration."""
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -38,7 +39,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.2.0" in invoke(["--version"], 0)
+    assert "0.3.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -67,6 +68,58 @@ def main():
     petstore = invoke(["compare", cases / "petstore.protected.yaml", cases / "petstore.public.yaml"], 1, format="json")
     assert len(petstore["changes"]) == 3
     assert all(change["witness"] == [] for change in petstore["changes"])
+
+    relative_before = cases / "oauth-relative.before.yaml"
+    relative_after = cases / "oauth-relative.after.json"
+    relative_sample = invoke(["compare", relative_before, relative_after], 1, format="json")
+    assert relative_sample["changes"][0]["witness"] == [
+        {"kind": "credential", "scheme": "warehouse"},
+        {"kind": "scope", "scheme": "warehouse", "name": "stock:read"},
+    ]
+    invoke(["compare", relative_before, relative_before], 0, format="sarif")
+    invoke(["compare", relative_after, relative_before], 0)
+
+    with tempfile.TemporaryDirectory(prefix="oas-auth-diff-urls-") as directory:
+        directory = Path(directory)
+        old = directory / "before.json"
+        new = directory / "after.json"
+        baseline = json.loads(relative_after.read_text(encoding="utf-8"))
+        flow = baseline["components"]["securitySchemes"]["warehouse"]["flows"]["clientCredentials"]
+        flow["tokenUrl"] = "token"
+        baseline["servers"] = [{"url": "https://auth.example.test/oauth/"}]
+        baseline["paths"]["/stock"]["get"]["security"][0]["warehouse"].append("stock:write")
+        baseline["paths"]["/override"] = copy.deepcopy(baseline["paths"]["/stock"])
+        baseline["paths"]["/override"]["get"]["servers"] = [{"url": "https://override.example.test/auth/"}]
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        candidate = copy.deepcopy(baseline)
+        candidate["servers"] = [{"url": "https://changed.example.test/oauth/"}]
+        candidate["paths"]["/override"]["get"]["security"] = [{"warehouse": ["stock:read"]}]
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        partial = invoke(["compare", old, new], 2, format="json")
+        assert any(change["path"] == "/stock" and change["kind"] == "incomparable" for change in partial["changes"])
+        assert any(change["path"] == "/override" and change["kind"] == "weakened" and change["witness"] for change in partial["changes"])
+        invoke(["compare", old, new], 2, format="sarif")
+
+        del baseline["paths"]["/override"]
+        baseline["servers"] = [{"url": "https://{region}.example.test/auth/", "variables": {
+            "region": {"default": "us", "enum": ["us", "eu"]}
+        }}]
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        candidate = copy.deepcopy(baseline)
+        candidate["paths"]["/stock"]["get"]["security"] = [{"warehouse": ["stock:read"]}]
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        invoke(["compare", old, new], 1, format="json")
+        candidate["servers"][0]["variables"]["region"]["enum"].reverse()
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        invoke(["compare", old, new], 1, format="json")
+        candidate["servers"][0]["variables"]["region"]["enum"].append("ap")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        changed_domain = invoke(["compare", old, new], 2, format="json")
+        assert any(item["code"] == "scheme-incomparable" for item in changed_domain["diagnostics"])
+        del candidate["servers"][0]["variables"]["region"]["enum"]
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        unrestricted = invoke(["compare", old, new], 2, format="json")
+        assert any(item["code"] == "auth.variable" for item in unrestricted["diagnostics"])
 
     with tempfile.TemporaryDirectory(prefix="oas-auth-diff-") as directory:
         directory = Path(directory)
@@ -123,7 +176,7 @@ def main():
         relative_file = directory / "relative.json"
         relative_file.write_text(json.dumps(relative_url), encoding="utf-8")
         relative_report = invoke(["compare", before, relative_file], 2, format="json")
-        assert any(item["code"] == "auth.url" for item in relative_report["diagnostics"])
+        assert any(item["code"] == "auth.base" for item in relative_report["diagnostics"])
 
     with tempfile.TemporaryDirectory(prefix="oas-auth-diff-refs-") as directory:
         directory = Path(directory)

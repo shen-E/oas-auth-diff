@@ -4,6 +4,12 @@
 `orders.after.json` removes the write requirement. Comparing them returns exit
 code 1 and a witness with the account credential and only the read scope.
 
+`oauth-relative.before.yaml` resolves `token` against an absolute server URL.
+`oauth-relative.after.json` spells the same token endpoint as an absolute URL
+and removes `stock:write`. Comparing them returns exit code 1, with a warehouse
+credential and the read scope. Changing only the spelling of that URL preserves
+the credential identity.
+
 The Petstore pair adapts the OpenAPI Initiative's [Petstore sample at commit
 4f86429f134f7e48b6351563549b4502fc69de52](https://github.com/OAI/OpenAPI-Specification/blob/4f86429f134f7e48b6351563549b4502fc69de52/_archive_/schemas/v3.0/pass/petstore.yaml).
 The upstream repository distributes its source under Apache-2.0; see the
