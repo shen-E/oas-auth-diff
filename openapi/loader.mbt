@@ -26,6 +26,13 @@ fn Graph::load_source(
       ),
     )
   }
+  if self.nodes >= 1000000 {
+    return Err(
+      self.failure(
+        "resource.nodes", "Reference graph exceeds 1000000 AST nodes", location,
+      ),
+    )
+  }
   let load = match self.load {
     Some(load) => load
     None => abort("loader is absent")
@@ -63,13 +70,6 @@ fn Graph::load_source(
     return Err(
       self.failure(
         "resource.bytes", "Reference graph exceeds 64 MiB of encoded source", location,
-      ),
-    )
-  }
-  if self.nodes >= 1000000 {
-    return Err(
-      self.failure(
-        "resource.nodes", "Reference graph exceeds 1000000 AST nodes", location,
       ),
     )
   }
