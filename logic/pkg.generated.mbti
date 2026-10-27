@@ -1,0 +1,47 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shen-E/oas-auth-diff/logic"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) enum Atom {
+  Credential(String)
+  Scope(String, String)
+  Role(String, String)
+} derive(Eq, @debug.Debug)
+pub fn Atom::equal(Self, Self) -> Bool
+pub fn Atom::not_equal(Self, Self) -> Bool
+pub fn Atom::to_repr(Self) -> @debug.Repr
+
+pub struct GrantSet {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn GrantSet::atoms(Self) -> Array[Atom]
+pub fn GrantSet::equal(Self, Self) -> Bool
+pub fn GrantSet::new(Array[Atom]) -> Self
+pub fn GrantSet::not_equal(Self, Self) -> Bool
+pub fn GrantSet::to_repr(Self) -> @debug.Repr
+
+pub struct Policy {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn Policy::allows(Self, GrantSet) -> Bool
+pub fn Policy::alternatives(Self) -> Array[Array[Atom]]
+pub fn Policy::anonymous() -> Self
+pub fn Policy::denied() -> Self
+pub fn Policy::equal(Self, Self) -> Bool
+pub fn Policy::implies(Self, Self) -> Bool
+pub fn Policy::new(Array[Array[Atom]]) -> Self
+pub fn Policy::not_equal(Self, Self) -> Bool
+pub fn Policy::to_repr(Self) -> @debug.Repr
+pub fn Policy::witness_against(Self, Self) -> GrantSet?
+
+// Type aliases
+
+// Traits
