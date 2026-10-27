@@ -13,9 +13,9 @@ credential and the read scope. This makes the reason for a CI failure inspectabl
 git clone https://github.com/shen-E/oas-auth-diff.git
 cd oas-auth-diff
 moon install ./cmd/oas-auth-diff
-oas-auth-diff compare before.yaml after.json
-oas-auth-diff compare before.yaml after.json --format json > auth-diff.json
-oas-auth-diff compare before.yaml after.json --format sarif > auth-diff.sarif
+oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json
+oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format json > auth-diff.json
+oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format sarif > auth-diff.sarif
 ```
 
 Build the native CLI from a checkout:
@@ -38,8 +38,15 @@ Pointers; it does not infer line numbers.
 ## Use the library
 
 The v0.1.0 package is prepared for release; it has not been uploaded to
-Mooncakes. Until publication, add this checkout to the consumer's MoonBit
-workspace. After release, the registry dependency will be
+Mooncakes. Until publication, place the consumer module and this checkout in
+a separate parent directory, then create a workspace there:
+
+```sh
+moon work init consumer oas-auth-diff
+```
+
+Declare `shen-E/oas-auth-diff@0.1.0` in `consumer/moon.mod`; the workspace resolves
+it to the checkout. After release, the registry dependency will be
 `shen-E/oas-auth-diff@0.1.0` and the CLI package will be
 `shen-E/oas-auth-diff/cmd/oas-auth-diff@0.1.0`.
 
