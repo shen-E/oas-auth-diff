@@ -269,3 +269,62 @@ test "scheme required fields, OAuth scopes and operation references fail closed"
     assert_true(document.operations[0].policy is None)
   }
 }
+
+///|
+test "operation refs fail before anonymous inheritance or explicit security across encodings" {
+  let cases = [
+    (
+      @openapi.Json,
+      (
+        #|{"openapi":"3.1.1","components":{"securitySchemes":{"Key":{"type":"http","scheme":"bearer"}}},"paths":{"/broken":{"get":{"$ref":"external.yaml#/operation","security":[]}},"/valid":{"post":{"security":[{"Key":[]}],"requestBody":{"$ref":"external.yaml#/Request"},"responses":{"200":{"$ref":"external.yaml#/Response"}}}}}}
+      ),
+    ),
+    (
+      @openapi.Yaml,
+      (
+        #|openapi: 3.1.1
+        #|components:
+        #|  securitySchemes:
+        #|    Key:
+        #|      type: http
+        #|      scheme: bearer
+        #|paths:
+        #|  /broken:
+        #|    get:
+        #|      $ref: external.yaml#/operation
+        #|      security: []
+        #|  /valid:
+        #|    post:
+        #|      security:
+        #|        - Key: []
+        #|      requestBody:
+        #|        $ref: external.yaml#/Request
+        #|      responses:
+        #|        '200':
+        #|          $ref: external.yaml#/Response
+      ),
+    ),
+  ]
+  for (format, text) in cases {
+    let document = @openapi.parse_document(text, format~)
+    assert_eq(document.operations.length(), 2)
+    assert_eq(document.diagnostics.length(), 1)
+    assert_eq(document.diagnostics[0].code, "auth.operation")
+    assert_eq(
+      document.diagnostics[0].location.pointer,
+      "/paths/~1broken/get/$ref",
+    )
+    for operation in document.operations {
+      if operation.path == "/broken" {
+        assert_true(operation.policy is None)
+      } else {
+        assert_false(policy(operation).allows(@logic.GrantSet::new([])))
+        assert_true(
+          policy(operation).allows(
+            @logic.GrantSet::new([@logic.Credential("Key")]),
+          ),
+        )
+      }
+    }
+  }
+}
