@@ -9,6 +9,8 @@ import {
 // Values
 pub fn parse_document(String, format~ : InputFormat, source? : String) -> Document raise DocumentError
 
+pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError) -> Document raise DocumentError
+
 // Errors
 pub(all) suberror DocumentError {
   DocumentError(String)
@@ -76,6 +78,15 @@ pub fn Scheme::equal(Self, Self) -> Bool
 pub fn Scheme::not_equal(Self, Self) -> Bool
 pub fn Scheme::to_json(Self) -> Json
 pub fn Scheme::to_repr(Self) -> @debug.Repr
+
+pub(all) struct SourceDocument {
+  text : String
+  format : InputFormat
+  source : String
+} derive(Eq, @debug.Debug)
+pub fn SourceDocument::equal(Self, Self) -> Bool
+pub fn SourceDocument::not_equal(Self, Self) -> Bool
+pub fn SourceDocument::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

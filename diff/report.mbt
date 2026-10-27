@@ -286,7 +286,7 @@ pub fn render_sarif(comparison : Comparison) -> String {
         "tool": {
           "driver": {
             "name": "oas-auth-diff",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "informationUri": "https://github.com/shen-E/oas-auth-diff",
             "rules": [
               {

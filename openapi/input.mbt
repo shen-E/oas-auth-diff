@@ -1,8 +1,13 @@
 ///|
 fn Limits::charge(self : Limits, pointer : String) -> Unit raise DocumentError {
   self.nodes += 1
-  if self.nodes > 250000 {
-    raise DocumentError("Input exceeds 250000 nodes at #" + pointer)
+  if self.nodes > self.maximum {
+    let message = if self.maximum < 250000 {
+      "Input exceeds remaining aggregate node budget at #"
+    } else {
+      "Input exceeds 250000 nodes at #"
+    }
+    raise DocumentError(message + pointer)
   }
 }
 
@@ -120,12 +125,16 @@ fn from_yaml(
 }
 
 ///|
-fn read_input(text : String, format : InputFormat) -> Value raise DocumentError {
+fn read_input(
+  text : String,
+  format : InputFormat,
+  node_limit~ : Int32 = 250000,
+) -> (Value, Int32) raise DocumentError {
   if @utf8.encode(text).length() > 16 * 1024 * 1024 {
     raise DocumentError("Input exceeds 16 MiB")
   }
-  let limits = { nodes: 0, }
-  match format {
+  let limits = { nodes: 0, maximum: node_limit, }
+  let root = match format {
     Json => {
       let parsed = @json.parse(
         text,
@@ -154,11 +163,19 @@ fn read_input(text : String, format : InputFormat) -> Value raise DocumentError 
           depth=128,
           duplicates=@yaml.Reject,
           aliases=false,
-          budget=250000,
+          budget=node_limit,
         ),
         schema~,
       ) catch {
-        error => raise DocumentError(error.to_string())
+        error => {
+          if node_limit < 250000 && error is @yaml.Exceeded(..) {
+            raise DocumentError(
+              "Input exceeds remaining aggregate node budget at " +
+              error.at().to_string(),
+            )
+          }
+          raise DocumentError(error.to_string())
+        }
       }
       if docs.length() != 1 {
         raise DocumentError("Expected exactly one YAML document")
@@ -166,4 +183,5 @@ fn read_input(text : String, format : InputFormat) -> Value raise DocumentError 
       from_yaml(docs[0], limits, "")
     }
   }
+  (root, limits.nodes)
 }

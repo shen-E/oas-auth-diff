@@ -38,7 +38,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.1.0" in invoke(["--version"], 0)
+    assert "0.2.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -124,6 +124,92 @@ def main():
         relative_file.write_text(json.dumps(relative_url), encoding="utf-8")
         relative_report = invoke(["compare", before, relative_file], 2, format="json")
         assert any(item["code"] == "auth.url" for item in relative_report["diagnostics"])
+
+    with tempfile.TemporaryDirectory(prefix="oas-auth-diff-refs-") as directory:
+        directory = Path(directory)
+        entries = []
+        for label, roles in (("before", ["admin"]), ("after", [])):
+            base = directory / label
+            (base / "defs").mkdir(parents=True)
+            (base / "paths").mkdir()
+            (base / "defs/key.yaml").write_text(
+                "Key:\n  type: http\n  scheme: bearer\n", encoding="utf-8"
+            )
+            (base / "paths/entry.yaml").write_text(
+                "item:\n  $ref: nested.json#/actual\n", encoding="utf-8"
+            )
+            nested = {
+                "actual": {"get": {"security": [{"Key": roles}], "responses": {
+                    "200": {"$ref": "https://example.invalid/never-load.yaml"}
+                }}},
+                "components": {"securitySchemes": {"Key": {"type": "http", "scheme": "basic"}}},
+            }
+            (base / "paths/nested.json").write_text(json.dumps(nested), encoding="utf-8")
+            entry = {
+                "openapi": "3.1.1",
+                "components": {"securitySchemes": {"Key": {"$ref": "defs/key.yaml#/Key"}}},
+                "paths": {"/data": {"$ref": "paths/entry.yaml#/item"}},
+            }
+            entry_file = base / "api.json"
+            entry_file.write_text(json.dumps(entry), encoding="utf-8")
+            entries.append(entry_file)
+        old, new = entries
+        invoke(["compare", old, new], 2, format="json")
+        multi = invoke(["compare", old, new, "--local-refs"], 1, format="json")
+        change = multi["changes"][0]
+        assert change["location"]["uri"].endswith("/after/paths/nested.json")
+        assert change["location"]["pointer"] == "/actual/get/security"
+        assert change["witness"] == [{"kind": "credential", "scheme": "Key"}]
+        invoke(["compare", new, new, "--local-refs"], 0, format="json")
+        external_sarif = invoke(["compare", old, new, "--local-refs"], 1, format="sarif")
+        result_location = external_sarif["runs"][0]["results"][0]["locations"][0]
+        assert result_location["physicalLocation"]["artifactLocation"]["uri"].endswith("/after/paths/nested.json")
+
+        entry = json.loads(new.read_text(encoding="utf-8"))
+        entry["paths"]["/missing"] = {"$ref": "missing.yaml#/item"}
+        new.write_text(json.dumps(entry), encoding="utf-8")
+        partial = invoke(["compare", old, new, "--local-refs"], 2, format="json")
+        assert any(change["kind"] == "weakened" for change in partial["changes"])
+        del entry["paths"]["/missing"]
+
+        outside = directory / "outside.json"
+        outside.write_text('{"get":{"security":[{"Key":[]}]}}', encoding="utf-8")
+        for reference in ("../outside.json", "%2e%2e/outside.json", "https://example.invalid/item.json", "file:///etc/passwd", "/outside.json", "//host/item.json", "C:/outside.json", "..\\outside.json", "defs/key.yaml?query=yes"):
+            entry["paths"]["/data"] = {"$ref": reference}
+            new.write_text(json.dumps(entry), encoding="utf-8")
+            denied = invoke(["compare", old, new, "--local-refs"], 2, format="json")
+            assert denied["complete"] is False
+        entry["paths"]["/data"] = {"$ref": "../outside.json"}
+        new.write_text(json.dumps(entry), encoding="utf-8")
+        invoke(["compare", old, new, "--ref-root", directory], 1, format="json")
+
+        name = "接口 résumé 🦉 100%.json"
+        unicode_target = new.parent / "paths" / name
+        unicode_target.write_text('{"get":{"security":[{"Key":[]}]}}', encoding="utf-8")
+        entry["paths"]["/data"] = {"$ref": "paths/%E6%8E%A5%E5%8F%A3%20r%C3%A9sum%C3%A9%20%F0%9F%A6%89%20100%25.json"}
+        new.write_text(json.dumps(entry), encoding="utf-8")
+        unicode_ref = invoke(["compare", old, new, "--local-refs"], 1, format="json")
+        assert unicode_ref["changes"][0]["location"]["uri"].endswith("%20100%25.json")
+
+        link = new.parent / "escape.json"
+        try:
+            os.symlink(outside, link)
+        except OSError:
+            if os.name != "nt":
+                raise
+        else:
+            entry["paths"]["/data"] = {"$ref": "escape.json"}
+            new.write_text(json.dumps(entry), encoding="utf-8")
+            invoke(["compare", old, new, "--local-refs"], 2, format="json")
+        if hasattr(os, "mkfifo"):
+            pipe = new.parent / "reference-pipe.json"
+            os.mkfifo(pipe)
+            entry["paths"]["/data"] = {"$ref": "reference-pipe.json"}
+            new.write_text(json.dumps(entry), encoding="utf-8")
+            invoke(["compare", old, new, "--local-refs"], 2, format="json")
+
+        for extra in (["--local-refs", "--local-refs"], ["--ref-root"], ["--ref-root", directory, "--ref-root", directory], ["--format", "xml"]):
+            invoke(["compare", old, new, *extra], 2, format="json")
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 
