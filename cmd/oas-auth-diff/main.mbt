@@ -20,7 +20,7 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.2.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
+  "oas-auth-diff 0.3.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
 }
 
 ///|
@@ -201,7 +201,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.2.0")
+      println("oas-auth-diff 0.3.0")
       return 0
     }
     _ => ()

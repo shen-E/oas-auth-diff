@@ -49,7 +49,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.2.0 package is prepared for release; it has not been uploaded to
+The v0.3.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -57,10 +57,10 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.2.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.3.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.2.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.2.0`.
+`shen-E/oas-auth-diff@0.3.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.3.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
@@ -84,6 +84,8 @@ generation without OpenAPI or filesystem dependencies.
 - OpenAPI 3.0 and 3.1 `paths` HTTP operations, in JSON or YAML.
 - Global inheritance, operation overrides, anonymous alternatives, AND/OR
   requirements, OAuth/OpenID scopes, and OpenAPI 3.1 role names.
+- Relative OAuth/OpenID endpoints resolved against effective HTTP(S) servers,
+  with operation/path overrides and finite server-variable enumerations.
 - Internal references and opt-in local files for relevant path items and
   security schemes, including mixed JSON/YAML reference chains.
 - Equivalent, strengthened, weakened, and mixed changes. Mixed changes fail the
@@ -93,6 +95,11 @@ Operations match by exact HTTP method and path. Additions and removals are liste
 separately; added anonymous operations receive a nonblocking review notice.
 Scheme renames or changed authentication configuration make the affected
 comparison incomplete. Description and presentation hints do not affect it.
+Endpoint identities are resolved for each operation, so sharing a component
+does not hide a different server override. Server order does not affect the
+comparison. A relative server requires an HTTP(S) source URI; a local file
+does not supply a deployment origin. Variables used by a server must declare
+a finite, nonempty `enum` containing their `default`.
 
 Network authentication references, callbacks, webhooks, server behavior, and
 request/response compatibility are outside this analysis. Full input rules,

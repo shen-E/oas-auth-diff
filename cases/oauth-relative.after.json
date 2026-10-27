@@ -1,0 +1,25 @@
+{
+  "openapi": "3.1.1",
+  "info": {"title": "Warehouse API", "version": "1.1.0"},
+  "components": {
+    "securitySchemes": {
+      "warehouse": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "https://auth.example.test/oauth/token",
+            "scopes": {"stock:read": "Read stock", "stock:write": "Update stock"}
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/stock": {
+      "get": {
+        "security": [{"warehouse": ["stock:read"]}],
+        "responses": {"200": {"description": "Stock listing"}}
+      }
+    }
+  }
+}
