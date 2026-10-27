@@ -1,0 +1,8 @@
+import {
+  "shen-E/oas-auth-diff/logic",
+  "shen-E/oas-auth-diff/openapi",
+}
+
+import {
+  "moonbitlang/core/json",
+} for "test"
