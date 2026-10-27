@@ -19,6 +19,7 @@ moon install ./cmd/oas-auth-diff
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format json > auth-diff.json
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format sarif > auth-diff.sarif
+oas-auth-diff compare before/api.yaml after/api.yaml --local-refs
 ```
 
 Build the native CLI from a checkout:
@@ -38,9 +39,17 @@ Reports go to stdout and diagnostics to stderr. JSON reports include
 witnesses, diagnostics, and source locations. SARIF 2.1.0 uses file URIs and JSON
 Pointers; it does not infer line numbers.
 
+`--local-refs` enables referenced JSON/YAML files inside each entry file's
+directory. `--ref-root DIR` enables them within an explicit shared directory.
+Nested references resolve relative to the file containing the reference;
+percent-encoded filenames are decoded once. Network references, symlinks,
+Windows reparse points, and files outside the boundary are rejected. Entry
+files themselves are explicitly selected inputs and need not lie inside
+`--ref-root`. With neither option, references stay within the current document.
+
 ## Use the library
 
-The v0.1.0 package is prepared for release; it has not been uploaded to
+The v0.2.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -48,16 +57,23 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.1.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.2.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.1.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.1.0`.
+`shen-E/oas-auth-diff@0.2.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.2.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
 or `format=Yaml`, then pass both documents to `compare`. The returned
 `Comparison` exposes changes, diagnostics, completeness, and `exit_code()`.
 `render_text`, `render_json`, and `render_sarif` render the same result.
+
+For split specifications, use `parse_with_loader(text, format=Json,
+source=entry_uri, load=loader)`. The loader receives the referring document's
+canonical source URI and a decoded relative path without its fragment. It
+returns `SourceDocument { text, format, source }`, or raises `DocumentError`.
+Use a stable canonical `source` for caching, cycle detection, and report
+locations. The caller controls file access; the core library performs no I/O.
 
 The independent `shen-E/oas-auth-diff/logic` package supports positive
 authorization policies, implication, permission evaluation, and counterexample
@@ -68,7 +84,8 @@ generation without OpenAPI or filesystem dependencies.
 - OpenAPI 3.0 and 3.1 `paths` HTTP operations, in JSON or YAML.
 - Global inheritance, operation overrides, anonymous alternatives, AND/OR
   requirements, OAuth/OpenID scopes, and OpenAPI 3.1 role names.
-- Internal document references for relevant path items and security schemes.
+- Internal references and opt-in local files for relevant path items and
+  security schemes, including mixed JSON/YAML reference chains.
 - Equivalent, strengthened, weakened, and mixed changes. Mixed changes fail the
   gate when they admit a new access condition.
 
@@ -77,7 +94,7 @@ separately; added anonymous operations receive a nonblocking review notice.
 Scheme renames or changed authentication configuration make the affected
 comparison incomplete. Description and presentation hints do not affect it.
 
-External authentication references, callbacks, webhooks, server behavior, and
+Network authentication references, callbacks, webhooks, server behavior, and
 request/response compatibility are outside this analysis. Full input rules,
 resource limits, and the implication algorithm are described in
 [semantics](docs/semantics.md). [Example pairs](cases/README.md) include a pinned
