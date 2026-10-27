@@ -24,35 +24,98 @@ fn canonical(value : Value) -> String {
 }
 
 ///|
+fn http_source(source : String) -> Bool {
+  let source = source.to_lower()
+  source.has_prefix("http://") || source.has_prefix("https://")
+}
+
+///|
+fn relative_uri(reference : String) -> Bool {
+  for char in reference.iter() {
+    if char == ':' {
+      return false
+    }
+    if char == '/' || char == '?' || char == '#' {
+      return true
+    }
+  }
+  true
+}
+
+///|
+fn identity_string(text : String, location : Location) -> Unit raise AuthError {
+  if text.length() > 8192 || @utf8.encode(text).length() > 8192 {
+    issue(
+      "resource.identities", "Authentication URI expansion exceeds 8192 bytes", location,
+    )
+  }
+}
+
+///|
 fn endpoint(
   obj : Map[String, Value],
   key : String,
   pointer : Location,
 ) -> Value raise AuthError {
   let url = required_string(obj, key, pointer)
-  let prefix = if url.has_prefix("https://") {
-    "https://"
-  } else if url.has_prefix("http://") {
-    "http://"
+  let location = pointer.key(key)
+  identity_string(url, location)
+  if relative_uri(url) {
+    Str(url)
   } else {
-    issue(
-      "auth.url",
-      "Authentication endpoints require absolute http/https URLs; relative URL resolution is unsupported",
-      pointer.key(key),
-    )
-    abort("unreachable")
+    Str(resolve_http_url(url, None, location))
   }
-  let authority = url
-    .strip_prefix(prefix)
-    .unwrap()
-    .split("/")
-    .next()
-    .unwrap_or("")
-  if authority.is_empty() ||
-    url.iter().any(char => char.to_int() <= 32 || char.to_int() == 127) {
-    issue("auth.url", "Invalid authentication endpoint URL", pointer.key(key))
+}
+
+///|
+fn endpoint_key(key : String) -> Bool {
+  key == "authorizationUrl" ||
+  key == "tokenUrl" ||
+  key == "refreshUrl" ||
+  key == "openIdConnectUrl"
+}
+
+///|
+fn relative_template(value : Value) -> Bool {
+  match value {
+    Obj(obj) =>
+      obj
+      .iter()
+      .any(entry => {
+        let (key, value) = entry
+        match value {
+          Str(url) if endpoint_key(key) => relative_uri(url)
+          _ => relative_template(value)
+        }
+      })
+    _ => false
   }
-  Str(url)
+}
+
+///|
+fn instantiate_template(
+  value : Value,
+  base : String,
+  location : Location,
+) -> Value raise AuthError {
+  match value {
+    Obj(obj) => {
+      let instantiated = Map([])
+      for key, value in obj {
+        let at = location.key(key)
+        instantiated[key] = match value {
+          Str(url) if endpoint_key(key) => {
+            let resolved = resolve_http_url(url, Some(base), at)
+            identity_string(resolved, at)
+            Str(resolved)
+          }
+          _ => instantiate_template(value, base, at)
+        }
+      }
+      Obj(instantiated)
+    }
+    _ => value
+  }
 }
 
 ///|
@@ -185,6 +248,8 @@ fn Context::scheme(
     public_scheme: { name, fingerprint: canonical(Obj(fingerprint)), location, },
     kind,
     scopes,
+    template: Obj(fingerprint),
+    relative: relative_template(Obj(fingerprint)),
   }
   self.cache[name] = parsed
   parsed

@@ -59,7 +59,7 @@ pub extend Diagnostic with Eq::{equal, not_equal}
 pub extend Diagnostic with ToJson::{to_json}
 
 ///|
-/// A named credential definition with a canonical authentication fingerprint.
+/// A named credential fingerprint. Operation identities include effective bases.
 pub(all) struct Scheme {
   name : String
   fingerprint : String
@@ -86,6 +86,8 @@ pub(all) struct Operation {
   location : Location
   security_location : Location
   schemes : Array[String]
+  // Resolved identities for comparison; definitions alone can retain relative URLs.
+  scheme_identities : Array[Scheme]
 } derive(Debug)
 
 ///|
@@ -153,6 +155,8 @@ priv struct ParsedScheme {
   public_scheme : Scheme
   kind : String
   scopes : Map[String, Bool]
+  template : Value
+  relative : Bool
 }
 
 ///|
@@ -162,6 +166,50 @@ priv struct Context {
   declared : Map[String, Value]
   cache : Map[String, ParsedScheme]
   graph : Graph
+  entry_servers : ServerSelection
+  operation_servers : Map[(String, String), ServerSelection]
+  servers_cache : Map[(String, String), Result[ServerSet, AuthError]]
+  identities_cache : Map[
+    (String, String, String),
+    Result[InstantiatedScheme, AuthError],
+  ]
+  mut used_identities : Int32
+  mut unused_identities : Int32
+  mut unused_attempts : Int32
+  mut used_identity_bytes : Int32
+  mut unused_identity_bytes : Int32
+}
+
+///|
+priv struct InstantiatedScheme {
+  scheme : Scheme
+  tuples : Int32
+  bytes : Int32
+}
+
+///|
+priv struct ServerSelection {
+  value : Value?
+  location : Location
+}
+
+///|
+priv struct ServerVariant {
+  base : String
+  domain_fingerprint : String
+  domain_bytes : Int32
+  is_default : Bool
+}
+
+///|
+priv struct ServerSet {
+  variants : Array[ServerVariant]
+}
+
+///|
+priv enum ServerPart {
+  Literal(String)
+  Variable(String)
 }
 
 ///|

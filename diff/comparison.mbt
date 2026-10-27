@@ -69,10 +69,10 @@ fn operation_key(operation : @openapi.Operation) -> String {
 
 ///|
 fn scheme_named(
-  document : @openapi.Document,
+  operation : @openapi.Operation,
   name : String,
 ) -> @openapi.Scheme? {
-  for scheme in document.schemes {
+  for scheme in operation.scheme_identities {
     if scheme.name == name {
       return Some(scheme)
     }
@@ -82,8 +82,6 @@ fn scheme_named(
 
 ///|
 fn scheme_issues(
-  before : @openapi.Document,
-  after : @openapi.Document,
   old_operation : @openapi.Operation,
   new_operation : @openapi.Operation,
 ) -> Array[@openapi.Diagnostic] {
@@ -97,7 +95,7 @@ fn scheme_issues(
   let issues = []
   for name in names {
     let message = match
-      (scheme_named(before, name), scheme_named(after, name)) {
+      (scheme_named(old_operation, name), scheme_named(new_operation, name)) {
       (Some(old), Some(new)) if old.fingerprint == new.fingerprint => None
       (Some(_), Some(_)) =>
         Some(
@@ -177,7 +175,7 @@ pub fn compare(
   for key in keys {
     match (old_operations.get(key), new_operations.get(key)) {
       (Some(old), Some(new)) => {
-        let issues = scheme_issues(before, after, old, new)
+        let issues = scheme_issues(old, new)
         for issue in issues {
           diagnostics.push(issue)
         }

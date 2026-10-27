@@ -125,7 +125,13 @@ test "changed scheme configuration cannot silently compare as equivalent" {
   })
   let after : @openapi.Document = {
     source: before.source,
-    operations: before.operations,
+    operations: before.operations.map(operation => {
+      ..operation,
+      scheme_identities: operation.scheme_identities.map(identity => {
+        ..identity,
+        fingerprint: identity.fingerprint + "changed",
+      }),
+    }),
     schemes: new_schemes,
     diagnostics: [],
   }

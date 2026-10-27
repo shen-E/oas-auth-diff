@@ -29,11 +29,13 @@ fn Context::operation(
   location : Location,
   inherited : ParsedSecurity?,
   inherited_location : Location,
+  path_servers : ServerSelection?,
   diagnostics : Array[Diagnostic],
 ) -> Operation {
   let mut operation_id = None
   let mut policy = None
   let mut schemes = []
+  let scheme_identities = []
   let mut security_location = location.key("security")
   try {
     let obj = object(value, location)
@@ -47,20 +49,27 @@ fn Context::operation(
     if obj.get("operationId") is Some(value) {
       operation_id = Some(string(value, location.key("operationId")))
     }
-    match obj.get("security") {
-      Some(value) => {
-        let parsed = self.security(value, security_location, charge=true)
-        policy = Some(parsed.policy)
-        schemes = parsed.schemes
-      }
+    let selection = match obj.get("servers") {
+      Some(value) => { value: Some(value), location: location.key("servers"), }
+      None => path_servers.unwrap_or(self.entry_servers)
+    }
+    self.operation_servers[(location.uri, location.pointer)] = selection
+    let parsed = match obj.get("security") {
+      Some(value) => Some(self.security(value, security_location, charge=true))
       None => {
         security_location = inherited_location
         if inherited is Some(parsed) {
           self.graph.charge_atoms(parsed.atoms, security_location)
-          policy = Some(parsed.policy)
-          schemes = parsed.schemes.copy()
         }
+        inherited
       }
+    }
+    if parsed is Some(parsed) {
+      schemes = parsed.schemes.copy()
+      for name in schemes {
+        scheme_identities.push(self.identity(name, selection, used=true))
+      }
+      policy = Some(parsed.policy)
     }
   } catch {
     error => diagnostics.push(diagnostic(error))
@@ -73,6 +82,7 @@ fn Context::operation(
     location,
     security_location,
     schemes,
+    scheme_identities,
   }
 }
 
@@ -166,7 +176,25 @@ fn parse_entry(
       Map([])
     }
   }
-  let context = { source, minor, declared, cache: Map([]), graph, }
+  let context : Context = {
+    source,
+    minor,
+    declared,
+    cache: Map([]),
+    graph,
+    entry_servers: {
+      value: obj.get("servers"),
+      location: entry_location.key("servers"),
+    },
+    operation_servers: Map([]),
+    servers_cache: Map([]),
+    identities_cache: Map([]),
+    used_identities: 0,
+    unused_identities: 0,
+    unused_attempts: 0,
+    used_identity_bytes: 0,
+    unused_identity_bytes: 0,
+  }
   let inherited_location = if obj.contains("security") {
     entry_location.key("security")
   } else {
@@ -236,6 +264,14 @@ fn parse_entry(
           )
         }
       }
+      let path_servers = match item.get("servers") {
+        Some(value) =>
+          Some({
+            value: Some(value),
+            location: resolved_location.key("servers"),
+          })
+        None => None
+      }
       for verb in methods {
         if item.get(verb) is Some(value) {
           if graph.operations >= 10000 {
@@ -255,6 +291,7 @@ fn parse_entry(
               resolved_location.key(verb),
               inherited,
               inherited_location,
+              path_servers,
               diagnostics,
             ),
           )
@@ -263,6 +300,10 @@ fn parse_entry(
     } catch {
       error => diagnostics.push(diagnostic(error))
     }
+  }
+  // All used identities are charged before best-effort unused work begins.
+  for index in 0..<operations.length() {
+    operations[index] = context.complete_unused_identities(operations[index])
   }
   // Export local unused declarations without implicitly reading more files.
   // Used external declarations have already been loaded and cached above.
