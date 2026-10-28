@@ -1,12 +1,14 @@
 """Exercise the built CLI as a subprocess; no compiler or registry orchestration."""
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from urllib.parse import quote
 
 
 def main():
@@ -39,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.6.0" in invoke(["--version"], 0)
+    assert "0.7.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -617,6 +619,144 @@ def main():
         assert change["location"] == {"uri": expected_uri, "pointer": expected_pointer}, (change["location"], expected_uri)
         assert (change["before_path"], change["after_path"]) == (old_path, new_path)
         invoke(["compare", old, new], 2, format="json")
+
+    with tempfile.TemporaryDirectory(prefix="oas-auth-diff-sarif-roots-") as directory:
+        directory = Path(directory)
+        baseline = json.loads(after.read_text(encoding="utf-8"))
+        baseline["security"] = [{"account": ["orders:read", "orders:write"]}]
+        baseline["paths"] = {
+            "/orders": {"get": {"operationId": "listOrders"}, "post": {"operationId": "createOrder"}},
+            "/orders/{id}": {"get": {"operationId": "getOrder"}},
+        }
+        candidate = copy.deepcopy(baseline)
+        candidate["security"] = [{"account": ["orders:read"]}]
+        checkouts = []
+        root_reports = []
+        for label in ("checkout-one", "checkout-two"):
+            checkout = directory / label
+            specs = checkout / "specs"
+            specs.mkdir(parents=True)
+            old = specs / "before.json"
+            new = specs / "after.json"
+            old.write_text(json.dumps(baseline), encoding="utf-8")
+            new.write_text(json.dumps(candidate), encoding="utf-8")
+            checkouts.append((checkout, old, new))
+            rendered = invoke(["compare", old, new, "--source-root", checkout], 1, format="sarif")
+            root_reports.append(rendered)
+            run = rendered["runs"][0]
+            expected_root = checkout.absolute().as_uri().rstrip("/") + "/"
+            assert run["originalUriBaseIds"] == {"%SRCROOT%": {"uri": expected_root}}
+            assert run["invocations"][0]["workingDirectory"]["uri"] == expected_root
+            expected_sources = {"before": old.absolute().as_uri(), "after": new.absolute().as_uri()}
+            assert run["properties"]["document_sources"] == expected_sources
+            assert len(run["results"]) == 3
+            for result in run["results"]:
+                location = result["locations"][0]
+                assert location["physicalLocation"]["artifactLocation"] == {"uri": "specs/after.json", "uriBaseId": "%SRCROOT%"}
+                assert "region" not in location["physicalLocation"]
+                assert location["properties"] == {"source": expected_sources["after"], "jsonPointer": "/security"}
+                identity_path = "/orders/{}" if result["properties"]["path"] == "/orders/{id}" else "/orders"
+                identity = ["oas-auth-diff/route/v1", result["ruleId"], "relative:specs/after.json",
+                            result["properties"]["method"], identity_path]
+                digest = hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode("utf-8")).hexdigest()
+                assert result["partialFingerprints"] == {"oasAuthDiff/route/v1": digest, "primaryLocationLineHash": digest}
+
+        def fingerprints(rendered):
+            return {(item["properties"]["method"], "/orders/{}" if item["properties"]["path"] in
+                     ("/orders/{id}", "/orders/{order_id}") else item["properties"]["path"]):
+                    item["partialFingerprints"]["primaryLocationLineHash"]
+                    for item in rendered["runs"][0]["results"]}
+
+        stable_fingerprints = fingerprints(root_reports[0])
+        assert fingerprints(root_reports[1]) == stable_fingerprints
+        assert len(set(stable_fingerprints.values())) == 3
+        checkout, old, new = checkouts[0]
+        plain = invoke(["compare", old, new], 1, format="json")
+        assert plain["document_sources"] == {"before": old.absolute().as_uri(), "after": new.absolute().as_uri()}
+        assert "weakened" in invoke(["compare", old, new], 1)
+        no_root = invoke(["compare", old, new], 1, format="sarif")
+        artifact = no_root["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert artifact == {"uri": new.absolute().as_uri()}
+        invoke(["compare", old, old, "--source-root", checkout], 0, format="sarif")
+
+        renamed = copy.deepcopy(candidate)
+        renamed["paths"]["/orders/{order_id}"] = renamed["paths"].pop("/orders/{id}")
+        variants = [renamed, copy.deepcopy(candidate), copy.deepcopy(candidate)]
+        variants[1]["info"]["title"] = "Edited description"
+        variants[1]["paths"]["/orders"]["get"]["operationId"] = "changedLabel"
+        variants[2]["security"] = []
+        for variant in variants:
+            new.write_text(json.dumps(variant), encoding="utf-8")
+            unchanged_identity = invoke(["compare", old, new, "--source-root", checkout], 1, format="sarif")
+            assert fingerprints(unchanged_identity) == stable_fingerprints
+        assert all(item["properties"]["witness"] == [] for item in unchanged_identity["runs"][0]["results"])
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        deployed = invoke(["compare", old, new, "--source-root", checkout,
+                           "--after-document-url", "https://docs.example/specs/after.json"], 1, format="sarif")
+        assert fingerprints(deployed) == stable_fingerprints
+
+        other_entry = new.parent / "other-api.json"
+        other_entry.write_text(json.dumps(candidate), encoding="utf-8")
+        distinct_entry = invoke(["compare", old, other_entry, "--source-root", checkout], 1, format="sarif")
+        assert not set(fingerprints(distinct_entry).values()) & set(stable_fingerprints.values())
+        names = ["api space%#接口.json"]
+        if os.name != "nt":
+            names.extend(["api?query.json", "api:colon.json"])
+        for name in names:
+            special = checkout / name
+            special.write_text(json.dumps(candidate), encoding="utf-8")
+            special_report = invoke(["compare", old, special, "--source-root", checkout], 1, format="sarif")
+            artifact = special_report["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+            expected_relative = "./" + name if ":" in name else quote(name, safe="")
+            assert artifact == {"uri": expected_relative, "uriBaseId": "%SRCROOT%"}, artifact
+
+        sibling = directory / "checkout-one-extra"
+        sibling.mkdir()
+        sibling_entry = sibling / "after.json"
+        sibling_entry.write_text(json.dumps(candidate), encoding="utf-8")
+        outside = invoke(["compare", old, sibling_entry, "--source-root", checkout], 1, format="sarif")
+        artifact = outside["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert artifact == {"uri": sibling_entry.absolute().as_uri()}, artifact
+
+        # Source roots change reporting, never the loader's permission boundary.
+        shared = directory / "shared"
+        shared.mkdir()
+        child = shared / "item.json"
+        child.write_text(json.dumps({"item": {"get": {"security": [{"account": ["orders:read"]}]}}}), encoding="utf-8")
+        external = copy.deepcopy(candidate)
+        external["paths"] = {"/orders": {"$ref": "../../shared/item.json#/item"}}
+        new.write_text(json.dumps(external), encoding="utf-8")
+        disabled = invoke(["compare", old, new, "--source-root", checkout], 2, format="sarif")
+        notifications = disabled["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        assert any(item["descriptor"]["id"] == "ref.external" for item in notifications)
+        confined = invoke(["compare", old, new, "--source-root", directory, "--local-refs"], 2, format="sarif")
+        notifications = confined["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        assert any(item["descriptor"]["id"] == "ref.load" for item in notifications)
+        loaded = invoke(["compare", old, new, "--ref-root", directory, "--source-root", checkout], 1, format="sarif")
+        run = loaded["runs"][0]
+        expected_root = checkout.resolve().as_uri().rstrip("/") + "/"
+        assert run["originalUriBaseIds"] == {"%SRCROOT%": {"uri": expected_root}}
+        result = run["results"][0]
+        artifact = result["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert artifact == {"uri": child.resolve().as_uri()}, artifact
+        assert result["locations"][0]["properties"] == {"source": child.resolve().as_uri(), "jsonPointer": "/item/get/security"}
+        assert result["partialFingerprints"]["primaryLocationLineHash"] == stable_fingerprints[("GET", "/orders")]
+
+        for extra in (["--source-root"], ["--source-root", ""],
+                      ["--source-root", checkout, "--source-root", checkout],
+                      ["--source-root", directory / "missing"], ["--source-root", old]):
+            invalid = invoke(["compare", old, new, *extra], 2, format="sarif")
+            run = invalid["runs"][0]
+            assert not run.get("originalUriBaseIds")
+            notification = run["invocations"][0]["toolExecutionNotifications"][0]
+            assert notification["locations"][0]["properties"]["source"] == "oas-auth-diff:arguments"
+        for format in (None, "text", "json"):
+            invalid = invoke(["compare", old, new, "--source-root", checkout], 2, format=format)
+            if format == "json":
+                assert invalid["diagnostics"][0]["location"]["uri"] == "oas-auth-diff:arguments"
+        fatal = invoke(["compare", old, directory / "missing.json", "--source-root", checkout], 2, format="sarif")
+        assert not fatal["runs"][0].get("originalUriBaseIds")
+        assert fatal["runs"][0]["properties"]["document_sources"] == {"before": None, "after": None}
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

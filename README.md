@@ -19,6 +19,7 @@ moon install ./cmd/oas-auth-diff
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format json > auth-diff.json
 oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format sarif > auth-diff.sarif
+oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format sarif --source-root . > auth-diff.sarif
 oas-auth-diff compare before/api.yaml after/api.yaml --local-refs
 oas-auth-diff compare cases/paired-schemes/before.yaml cases/paired-schemes/after.json --local-refs
 ```
@@ -65,7 +66,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.6.0 package is prepared for release; it has not been uploaded to
+The v0.7.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -73,16 +74,26 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.6.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.7.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.6.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.6.0`.
+`shen-E/oas-auth-diff@0.7.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.7.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
 or `format=Yaml`, then pass both documents to `compare`. The returned
 `Comparison` exposes changes, diagnostics, completeness, and `exit_code()`.
 `render_text`, `render_json`, and `render_sarif` render the same result.
+`Comparison.before_source` and `after_source` retain entry document identities;
+JSON and SARIF expose them as `document_sources`.
+
+For portable SARIF locations, construct
+`SarifSourceRoot::new("file:///checkout/")` in the `diff` package and pass
+`source_root=Some(root)` to `render_sarif`. The constructor raises `SarifError`
+for an invalid directory URI. Existing render calls need no new arguments.
+The CLI exposes this as `--source-root DIR` with `--format sarif`.
+See [SARIF in CI](docs/sarif.md) for file mapping, stable result fingerprints,
+and a workflow example.
 
 For comparison inputs, `parse_pair(before_source, after_source)` returns a
 `DocumentPair` with `before` and `after` documents. Each input is a
