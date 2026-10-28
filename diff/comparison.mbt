@@ -38,6 +38,8 @@ pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
   complete : Bool
+  before_source : String?
+  after_source : String?
   before_document_url : String?
   after_document_url : String?
 } derive(Debug)
@@ -67,6 +69,8 @@ pub fn failure_report(diagnostics : Array[@openapi.Diagnostic]) -> Comparison {
     changes: [],
     diagnostics,
     complete: false,
+    before_source: None,
+    after_source: None,
     before_document_url: None,
     after_document_url: None,
   }
@@ -377,6 +381,8 @@ pub fn compare(
   })
   {
     changes,
+    before_source: Some(before.source),
+    after_source: Some(after.source),
     before_document_url: before.document_url,
     after_document_url: after.document_url,
     complete: diagnostics.is_empty() &&
