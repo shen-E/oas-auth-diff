@@ -96,6 +96,7 @@ pub extend Operation with Debug::{to_repr}
 ///|
 pub(all) struct Document {
   source : String
+  document_url : String?
   operations : Array[Operation]
   schemes : Array[Scheme]
   diagnostics : Array[Diagnostic]
@@ -168,6 +169,7 @@ priv struct Context {
   graph : Graph
   entry_servers : ServerSelection
   operation_servers : Map[(String, String), ServerSelection]
+  identity_origins : Map[(String, String, String), Array[String]]
   servers_cache : Map[(String, String), Result[ServerSet, AuthError]]
   identities_cache : Map[
     (String, String, String),
@@ -185,6 +187,7 @@ priv struct InstantiatedScheme {
   scheme : Scheme
   tuples : Int32
   bytes : Int32
+  origins : Array[String]
 }
 
 ///|
@@ -204,6 +207,7 @@ priv struct ServerVariant {
 ///|
 priv struct ServerSet {
   variants : Array[ServerVariant]
+  origins : Array[String]
 }
 
 ///|
@@ -229,6 +233,7 @@ priv struct LoadFailure {
 priv struct CachedDocument {
   input : SourceDocument
   value : Result[Value, LoadFailure]
+  document_url : String?
 }
 
 ///|
@@ -237,6 +242,9 @@ priv struct Graph {
   requests : Map[String, Map[String, Result[String, LoadFailure]]]
   load : ((String, String) -> SourceDocument raise DocumentError)?
   resource_diagnostics : Array[Diagnostic]
+  explicit_urls : Bool
+  conflicted_origins : Map[String, Bool]
+  origin_children : Map[String, Map[String, Bool]]
   mut bytes : Int32
   mut nodes : Int32
   mut operations : Int32

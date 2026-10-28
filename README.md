@@ -39,6 +39,21 @@ Reports go to stdout and diagnostics to stderr. JSON reports include
 witnesses, diagnostics, and source locations. SARIF 2.1.0 uses file URIs and JSON
 Pointers; it does not infer line numbers.
 
+Local specifications with relative servers can declare where each document is
+expected to be served:
+
+```sh
+oas-auth-diff compare before.yaml after.yaml --before-document-url https://api.example/spec/openapi.yaml --after-document-url https://api.example/spec/openapi.yaml
+```
+
+These are complete document URLs. For example, `servers: [{url: ../api/}]`
+resolves against `/spec/openapi.yaml` to `/api/`. The options supply resolution
+context and make no network requests. They do not enable local references or
+change their directory boundary. File URIs remain the evidence locations.
+JSON `document_urls` and SARIF run properties record the normalized before/after
+entry URLs; text reports show the same context. Fatal load/parse reports have
+no parsed URL context.
+
 `--local-refs` enables referenced JSON/YAML files inside each entry file's
 directory. `--ref-root DIR` enables them within an explicit shared directory.
 Nested references resolve relative to the file containing the reference;
@@ -49,7 +64,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.3.0 package is prepared for release; it has not been uploaded to
+The v0.4.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -57,10 +72,10 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.3.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.4.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.3.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.3.0`.
+`shen-E/oas-auth-diff@0.4.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.4.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
@@ -74,6 +89,14 @@ canonical source URI and a decoded relative path without its fragment. It
 returns `SourceDocument { text, format, source }`, or raises `DocumentError`.
 Use a stable canonical `source` for caching, cycle detection, and report
 locations. The caller controls file access; the core library performs no I/O.
+
+Both parsers accept `document_url=Some("https://api.example/spec/openapi.yaml")`
+to set a deployment address independently of `source`. With this option,
+referenced documents inherit addresses resolved from their referring document's
+URL and the original escaped reference path. A canonical source with conflicting
+addresses is diagnosed; dependent policies are withdrawn. Without the option,
+an HTTP(S) `source` remains its document's default address. `Document.document_url`
+exposes the entry context, while `Document.source` retains its source identity.
 
 The independent `shen-E/oas-auth-diff/logic` package supports positive
 authorization policies, implication, permission evaluation, and counterexample
@@ -97,8 +120,8 @@ Scheme renames or changed authentication configuration make the affected
 comparison incomplete. Description and presentation hints do not affect it.
 Endpoint identities are resolved for each operation, so sharing a component
 does not hide a different server override. Server order does not affect the
-comparison. A relative server requires an HTTP(S) source URI; a local file
-does not supply a deployment origin. Variables used by a server must declare
+comparison. A relative server requires a configured document URL or an HTTP(S)
+source URI. Variables used by a server must declare
 a finite, nonempty `enum` containing their `default`.
 
 Network authentication references, callbacks, webhooks, server behavior, and

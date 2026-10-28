@@ -67,6 +67,7 @@ fn Context::identity(
   selection : ServerSelection,
   used~ : Bool,
   external~ : Bool = true,
+  operation~ : Location? = None,
 ) -> Scheme raise AuthError {
   let parsed = self.scheme(name, external~)
   let key = if parsed.relative {
@@ -87,20 +88,21 @@ fn Context::identity(
           used,
           parsed.public_scheme.location,
         )
-        cached.scheme
+        self.bind_identity(cached, operation)
       }
       Err(error) => raise error
     }
   }
   let instantiated = try {
     let location = parsed.public_scheme.location
-    let (fingerprint, tuples) = if !parsed.relative {
+    let (fingerprint, tuples, origins) = if !parsed.relative {
       self.charge_identity_tuples(1, used, location)
       (
         "{\"variants\":[{\"configuration\":" +
         parsed.public_scheme.fingerprint +
         ",\"variables\":{},\"default\":true}]}",
         1,
+        [],
       )
     } else {
       let set = self.server_set(selection)
@@ -143,17 +145,23 @@ fn Context::identity(
       (
         "{\"variants\":[" + sorted_keys(unique).join(",") + "]}",
         set.variants.length(),
+        set.origins,
       )
     }
     let bytes = @utf8.encode(fingerprint).length()
     self.charge_identity_bytes(bytes, used, location)
-    Ok({ scheme: { ..parsed.public_scheme, fingerprint, }, tuples, bytes, })
+    Ok({
+      scheme: { ..parsed.public_scheme, fingerprint, },
+      tuples,
+      bytes,
+      origins,
+    })
   } catch {
     error => Err(error)
   }
   self.identities_cache[key] = instantiated
   match instantiated {
-    Ok(value) => value.scheme
+    Ok(value) => self.bind_identity(value, operation)
     Err(error) => raise error
   }
 }
@@ -186,7 +194,15 @@ fn Context::complete_unused_identities(
     if present.contains(name) {
       continue
     }
-    identities.push(self.identity(name, selection, used=false, external=false)) catch {
+    identities.push(
+      self.identity(
+        name,
+        selection,
+        used=false,
+        external=false,
+        operation=Some(operation.location),
+      ),
+    ) catch {
       _ => ()
     }
   }

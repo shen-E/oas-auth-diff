@@ -96,6 +96,7 @@ test "incomplete analysis retains a regression on another operation" {
   let after_base = document([{ "account": ["read"] }])
   let after : @openapi.Document = {
     source: after_base.source,
+    document_url: after_base.document_url,
     operations: after_base.operations,
     schemes: after_base.schemes,
     diagnostics: [
@@ -125,6 +126,7 @@ test "changed scheme configuration cannot silently compare as equivalent" {
   })
   let after : @openapi.Document = {
     source: before.source,
+    document_url: before.document_url,
     operations: before.operations.map(operation => {
       ..operation,
       scheme_identities: operation.scheme_identities.map(identity => {

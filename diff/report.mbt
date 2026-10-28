@@ -79,12 +79,27 @@ fn change_json(change : OperationChange) -> Json {
 }
 
 ///|
+fn document_urls(comparison : Comparison) -> Json {
+  {
+    "before": match comparison.before_document_url {
+      Some(url) => Json(url)
+      None => Json::null()
+    },
+    "after": match comparison.after_document_url {
+      Some(url) => Json(url)
+      None => Json::null()
+    },
+  }
+}
+
+///|
 /// Render a stable, versioned JSON report, including incomplete results.
 pub fn render_json(comparison : Comparison) -> String {
   let report : Json = {
     "schema_version": 1,
     "complete": comparison.complete,
     "exit_code": comparison.exit_code(),
+    "document_urls": document_urls(comparison),
     "changes": Json(comparison.changes.map(change_json)),
     "diagnostics": Json(comparison.diagnostics.map(diagnostic_json)),
   }
@@ -114,6 +129,12 @@ pub fn render_text(comparison : Comparison) -> String {
   let lines = [
     "oas-auth-diff: \{if comparison.complete { "complete" } else { "incomplete" }}",
   ]
+  if comparison.before_document_url is Some(url) {
+    lines.push("Baseline document URL: " + url)
+  }
+  if comparison.after_document_url is Some(url) {
+    lines.push("Candidate document URL: " + url)
+  }
   for change in comparison.changes {
     let review = if added_anonymous(change) {
       " (anonymous operation; review)"
@@ -286,7 +307,7 @@ pub fn render_sarif(comparison : Comparison) -> String {
         "tool": {
           "driver": {
             "name": "oas-auth-diff",
-            "version": "0.3.0",
+            "version": "0.4.0",
             "informationUri": "https://github.com/shen-E/oas-auth-diff",
             "rules": [
               {
@@ -315,6 +336,7 @@ pub fn render_sarif(comparison : Comparison) -> String {
         "properties": {
           "schema_version": 1,
           "complete": comparison.complete,
+          "document_urls": document_urls(comparison),
           "changes": Json(comparison.changes.map(change_json)),
         },
       },

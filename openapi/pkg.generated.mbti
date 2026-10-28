@@ -7,9 +7,9 @@ import {
 }
 
 // Values
-pub fn parse_document(String, format~ : InputFormat, source? : String) -> Document raise DocumentError
+pub fn parse_document(String, format~ : InputFormat, source? : String, document_url? : String?) -> Document raise DocumentError
 
-pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError) -> Document raise DocumentError
+pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError, document_url? : String?) -> Document raise DocumentError
 
 // Errors
 pub(all) suberror DocumentError {
@@ -35,6 +35,7 @@ pub fn Diagnostic::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Document {
   source : String
+  document_url : String?
   operations : Array[Operation]
   schemes : Array[Scheme]
   diagnostics : Array[Diagnostic]

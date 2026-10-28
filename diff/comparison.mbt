@@ -36,6 +36,8 @@ pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
   complete : Bool
+  before_document_url : String?
+  after_document_url : String?
 } derive(Debug)
 
 ///|
@@ -59,7 +61,13 @@ pub fn Comparison::exit_code(self : Comparison) -> Int32 {
 ///|
 /// Construct a structured failure result when a document cannot be loaded.
 pub fn failure_report(diagnostics : Array[@openapi.Diagnostic]) -> Comparison {
-  { changes: [], diagnostics, complete: false, }
+  {
+    changes: [],
+    diagnostics,
+    complete: false,
+    before_document_url: None,
+    after_document_url: None,
+  }
 }
 
 ///|
@@ -251,6 +259,8 @@ pub fn compare(
   })
   {
     changes,
+    before_document_url: before.document_url,
+    after_document_url: after.document_url,
     complete: diagnostics.is_empty() &&
     changes.all(fn(change) { change.kind != Incomparable }),
     diagnostics,

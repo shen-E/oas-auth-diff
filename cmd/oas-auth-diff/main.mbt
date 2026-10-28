@@ -16,11 +16,13 @@ priv struct Options {
   format : String
   local_refs : Bool
   ref_root : String?
+  before_document_url : String?
+  after_document_url : String?
 }
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.3.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
+  "oas-auth-diff 0.4.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
 }
 
 ///|
@@ -30,6 +32,8 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       let mut format = "text"
       let mut local_refs = false
       let mut ref_root = None
+      let mut before_document_url = None
+      let mut after_document_url = None
       let mut seen_format = false
       let mut seen_local = false
       let mut index = 0
@@ -57,6 +61,24 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
             local_refs = true
             index += 2
           }
+          "--before-document-url" if before_document_url is None &&
+            index + 1 < rest.length() => {
+            let value = rest[index + 1]
+            if value.is_empty() || value.has_prefix("--") {
+              raise CliError("--before-document-url requires a document URL")
+            }
+            before_document_url = Some(value)
+            index += 2
+          }
+          "--after-document-url" if after_document_url is None &&
+            index + 1 < rest.length() => {
+            let value = rest[index + 1]
+            if value.is_empty() || value.has_prefix("--") {
+              raise CliError("--after-document-url requires a document URL")
+            }
+            after_document_url = Some(value)
+            index += 2
+          }
           _ =>
             raise CliError(
               "unknown, duplicate, or incomplete option: " + rest[index],
@@ -66,7 +88,15 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       if before.has_prefix("--") || after.has_prefix("--") {
         raise CliError("compare requires two input file paths")
       }
-      { before, after, format, local_refs, ref_root, }
+      {
+        before,
+        after,
+        format,
+        local_refs,
+        ref_root,
+        before_document_url,
+        after_document_url,
+      }
     }
     _ =>
       raise CliError("expected compare BEFORE AFTER [--format text|json|sarif]")
@@ -128,6 +158,7 @@ fn load_document(
   path : String,
   local_refs : Bool,
   ref_root : String?,
+  document_url : String?,
 ) -> @openapi.Document raise {
   let extension = @path.Path(path).extname().to_owned()
   let format = match extension {
@@ -157,10 +188,11 @@ fn load_document(
       text,
       format~,
       source=canonical_source_uri(path),
+      document_url~,
       load=(from, relative) => load_local_reference(boundary, from, relative),
     )
   } else {
-    @openapi.parse_document(text, format~, source=file_uri(path))
+    @openapi.parse_document(text, format~, source=file_uri(path), document_url~)
   }
 }
 
@@ -201,7 +233,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.3.0")
+      println("oas-auth-diff 0.4.0")
       return 0
     }
     _ => ()
@@ -218,11 +250,17 @@ fn run(args : Array[String]) -> Int32 {
     options.before,
     options.local_refs,
     options.ref_root,
+    options.before_document_url,
   ) catch {
     error =>
       return failed(error.to_string(), file_uri(options.before), options.format)
   }
-  let after = load_document(options.after, options.local_refs, options.ref_root) catch {
+  let after = load_document(
+    options.after,
+    options.local_refs,
+    options.ref_root,
+    options.after_document_url,
+  ) catch {
     error =>
       return failed(error.to_string(), file_uri(options.after), options.format)
   }

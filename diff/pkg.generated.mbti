@@ -38,6 +38,8 @@ pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
   complete : Bool
+  before_document_url : String?
+  after_document_url : String?
 } derive(@debug.Debug)
 pub fn Comparison::exit_code(Self) -> Int32
 pub fn Comparison::to_repr(Self) -> @debug.Repr

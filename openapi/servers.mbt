@@ -79,15 +79,20 @@ fn substitute_server(
 }
 
 ///|
-fn server_base(url : String, location : Location) -> String raise AuthError {
+fn server_base(
+  url : String,
+  location : Location,
+  graph : Graph,
+) -> String raise AuthError {
   if relative_uri(url) {
-    if !http_source(location.uri) {
+    let base = graph.document_base(location)
+    if base is None {
       issue(
         "auth.base", "Relative server URL requires an explicit HTTP(S) document source",
         location,
       )
     }
-    resolve_http_url(url, Some(location.uri), location)
+    resolve_http_url(url, base, location)
   } else {
     resolve_http_url(url, None, location)
   }
@@ -97,7 +102,8 @@ fn server_base(url : String, location : Location) -> String raise AuthError {
 fn expand_server(
   value : Value,
   location : Location,
-) -> Array[ServerVariant] raise AuthError {
+  graph : Graph,
+) -> (Array[ServerVariant], Array[String]) raise AuthError {
   let obj = object(value, location)
   let at = location.key("url")
   let url = required_string(obj, "url", location)
@@ -208,9 +214,13 @@ fn expand_server(
   let domain_fingerprint = canonical(Obj(domain))
   let domain_bytes = @utf8.encode(domain_fingerprint).length()
   let out = []
+  let origins = []
   for assignment in assignments {
     let rendered = substitute_server(parts, assignment, at)
-    let base = server_base(rendered, at)
+    let base = server_base(rendered, at, graph)
+    if relative_uri(rendered) && !origins.contains(at.uri) {
+      origins.push(at.uri)
+    }
     identity_string(base, at)
     out.push({
       base,
@@ -219,11 +229,14 @@ fn expand_server(
       is_default: variables.all(name => assignment[name] == defaults[name]),
     })
   }
-  out
+  (out, origins)
 }
 
 ///|
-fn server_set(selection : ServerSelection) -> ServerSet raise AuthError {
+fn server_set(
+  selection : ServerSelection,
+  graph : Graph,
+) -> ServerSet raise AuthError {
   let entries = match selection.value {
     None => []
     Some(Seq(entries)) => entries
@@ -239,20 +252,28 @@ fn server_set(selection : ServerSelection) -> ServerSet raise AuthError {
     return {
       variants: [
         {
-          base: server_base("/", selection.location),
+          base: server_base("/", selection.location, graph),
           domain_fingerprint: "{}",
           domain_bytes: 2,
           is_default: true,
         },
       ],
+      origins: [selection.location.uri],
     }
   }
   let variants = []
+  let origins = []
   for index, entry in entries {
-    let expanded = expand_server(
+    let (expanded, dependencies) = expand_server(
       entry,
       selection.location.key(index.to_string()),
+      graph,
     )
+    for origin in dependencies {
+      if !origins.contains(origin) {
+        origins.push(origin)
+      }
+    }
     if expanded.length() > 64 - variants.length() {
       issue(
         "resource.servers",
@@ -264,7 +285,7 @@ fn server_set(selection : ServerSelection) -> ServerSet raise AuthError {
       variants.push(variant)
     }
   }
-  { variants, }
+  { variants, origins, }
 }
 
 ///|
@@ -276,7 +297,9 @@ fn Context::server_set(
   let result = match self.servers_cache.get(key) {
     Some(result) => result
     None => {
-      let result = Ok(server_set(selection)) catch { error => Err(error) }
+      let result = Ok(server_set(selection, self.graph)) catch {
+        error => Err(error)
+      }
       self.servers_cache[key] = result
       result
     }
