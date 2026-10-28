@@ -1,0 +1,3 @@
+{
+  "Gate": {"type": "apiKey", "in": "header", "name": "X-Deployment-Gate"}
+}

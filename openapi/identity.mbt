@@ -67,7 +67,8 @@ fn Context::identity(
   selection : ServerSelection,
   used~ : Bool,
   external~ : Bool = true,
-  operation~ : Location? = None,
+  operation~ : (String, String)? = None,
+  prepaid~ : Bool = false,
 ) -> Scheme raise AuthError {
   let parsed = self.scheme(name, external~)
   let key = if parsed.relative {
@@ -79,7 +80,7 @@ fn Context::identity(
     return match result {
       Ok(cached) => {
         self.charge_identity_tuples(
-          cached.tuples,
+          cached.tuples - (if prepaid { 1 } else { 0 }),
           used,
           parsed.public_scheme.location,
         )
@@ -96,7 +97,7 @@ fn Context::identity(
   let instantiated = try {
     let location = parsed.public_scheme.location
     let (fingerprint, tuples, origins) = if !parsed.relative {
-      self.charge_identity_tuples(1, used, location)
+      self.charge_identity_tuples(if prepaid { 0 } else { 1 }, used, location)
       (
         "{\"variants\":[{\"configuration\":" +
         parsed.public_scheme.fingerprint +
@@ -107,7 +108,7 @@ fn Context::identity(
     } else {
       let set = self.server_set(selection)
       self.charge_identity_tuples(
-        set.variants.length(),
+        set.variants.length() - (if prepaid { 1 } else { 0 }),
         used,
         selection.location,
       )
@@ -155,6 +156,7 @@ fn Context::identity(
       tuples,
       bytes,
       origins,
+      contents: parsed.contents,
     })
   } catch {
     error => Err(error)
@@ -171,13 +173,11 @@ fn Context::complete_unused_identities(
   self : Context,
   operation : Operation,
 ) -> Operation {
-  if operation.policy is None || self.unused_attempts >= 100000 {
+  if !self.operation_ready(operation) || self.unused_attempts >= 100000 {
     return operation
   }
   let selection = match
-    self.operation_servers.get(
-      (operation.location.uri, operation.location.pointer),
-    ) {
+    self.operation_servers.get((operation.http_method, operation.path)) {
     Some(selection) => selection
     None => return operation
   }
@@ -200,7 +200,7 @@ fn Context::complete_unused_identities(
         selection,
         used=false,
         external=false,
-        operation=Some(operation.location),
+        operation=Some((operation.http_method, operation.path)),
       ),
     ) catch {
       _ => ()

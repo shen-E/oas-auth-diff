@@ -114,9 +114,17 @@ test "canonical source cache rejects content or encoding conflicts" {
         }
       },
     )
-    assert_eq(document.diagnostics.length(), 1)
+    assert_eq(document.diagnostics.length(), 2)
     assert_eq(document.diagnostics[0].code, "ref.conflict")
     assert_eq(document.operations.length(), 2)
+    for operation in document.operations {
+      if operation.path == "/ok" {
+        assert_true(operation.policy is Some(_))
+      } else {
+        assert_true(operation.policy is None)
+        assert_eq(operation.scheme_identities.length(), 0)
+      }
+    }
   }
 }
 

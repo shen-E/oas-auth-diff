@@ -49,14 +49,53 @@ OAuth authorization/token/refresh endpoints and the OpenID URL resolve to HTTP
 or HTTPS URLs. An unused invalid declaration does not block analysis.
 Even a removed requirement is conservatively incomparable if its scheme has
 no matching declaration in the other document.
-Unused definitions do not trigger external file loading. If a removed
-requirement's matching declaration exists only through an unused external
-reference in the other document, its identity is unknown and the comparison
-is conservatively incomplete.
+Single-document parsing does not load unused external definitions. Comparing
+two independently parsed documents can therefore remain incomplete when a
+removed requirement's matching identity exists only through an unused external
+reference. Paired parsing resolves that comparison dependency explicitly.
 
 A diagnostic marks analysis incomplete and gives exit code 2 priority. Findings
 on other operations remain available. This avoids treating malformed or
 unsupported authentication as a successful check.
+
+## Paired input resolution
+
+`parse_pair` accepts two `SourceDocument` inputs and returns a `DocumentPair`.
+It prepares both inputs independently, matches exact method/path pairs whose
+own authentication policies are valid, and takes each pair's used scheme-name
+union. A side lacking an identity resolves its own declaration with its own
+operation's effective servers. A scheme fingerprint is never borrowed from
+the other input. Missing declarations, changed configurations, and invalid
+definitions remain incomparable. Added and removed operations do not request
+matching counterpart declarations.
+
+The CLI uses this path automatically. Local file loading still requires
+`--local-refs` or `--ref-root`; network references remain unsupported. Library
+callers supply separate optional `before_load` and `after_load` callbacks and
+deployment URLs. Fatal `PairError.Before` / `PairError.After` wrap the original
+`DocumentError` without guessing an error location. Existing single-document
+parsers retain their interfaces, and `diff.compare` performs no I/O.
+
+Each input keeps one live source graph across normal extraction and counterpart
+resolution. Successful and failed requests are cached; no phase re-reads or
+re-parses an existing request. The graphs are separate, so the same canonical
+URI can legitimately contain different before/after snapshots. Within one
+graph, contradictory text or format for a canonical source is an error.
+
+Counterpart lookup consumes the existing used-identity budget before unrelated
+local unused work. Each actual missing-identity attempt costs at least one
+tuple, including failures; a successful multi-server identity costs its full
+tuple count. Document, byte, node, tuple, and serialized-identity limits do not
+reset between phases or transfer between inputs. Exhaustion gives an incomplete
+result and retains independent findings.
+
+Finalization occurs after supplemental loading. Deployment-address conflicts
+withdraw identities that depend on the ambiguous origin. Content conflicts
+withdraw policies and identities whose reference chains read the contradictory
+source, including anonymous policies and absolute authentication endpoints.
+An independent path through a different reference chain keeps its valid
+evidence. This prevents a late lookup from leaving an earlier untrustworthy
+witness in the report.
 
 ## Relative authentication addresses
 

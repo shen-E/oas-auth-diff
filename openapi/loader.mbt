@@ -72,19 +72,23 @@ fn Graph::load_source(
   }
   if self.documents.get(input.source) is Some(cached) {
     self.record_origin_edge(location.uri, input.source)
-    if cached.document_url != document_url {
+    let origin_conflict = cached.document_url != document_url
+    let content_conflict = cached.input.text != input.text ||
+      cached.input.format != input.format
+    if origin_conflict {
       self.conflicted_origins[input.source] = true
-      return Err({
-        code: "ref.conflict",
-        message: "Canonical source has conflicting document URLs: " +
-        input.source,
-      })
     }
-    if cached.input.text != input.text || cached.input.format != input.format {
+    if content_conflict {
+      self.conflicted_contents[input.source] = true
+    }
+    if origin_conflict || content_conflict {
       return Err({
         code: "ref.conflict",
-        message: "Loader returned conflicting content or format for " +
-        input.source,
+        message: if content_conflict {
+          "Canonical source has conflicting content or format: " + input.source
+        } else {
+          "Canonical source has conflicting document URLs: " + input.source
+        },
       })
     }
     return match cached.value {

@@ -127,6 +127,27 @@ fn Context::scheme(
   if self.cache.get(name) is Some(cached) {
     return cached
   }
+  let key = (name, external)
+  if self.scheme_failures.get(key) is Some(error) {
+    raise error
+  }
+  self.parse_scheme(name, external~) catch {
+    AuthError(_, _, _) as error => {
+      self.scheme_failures[key] = error
+      raise error
+    }
+  }
+}
+
+///|
+fn Context::parse_scheme(
+  self : Context,
+  name : String,
+  external~ : Bool = true,
+) -> ParsedScheme raise AuthError {
+  if self.cache.get(name) is Some(cached) {
+    return cached
+  }
   let pointer : Location = {
     uri: self.source,
     pointer: pointer_key("/components/securitySchemes", name),
@@ -138,7 +159,7 @@ fn Context::scheme(
       abort("unreachable")
     }
   }
-  let (obj, location) = self.graph.resolve(value, pointer, external~)
+  let (obj, location, contents) = self.graph.resolve(value, pointer, external~)
   let kind = required_string(obj, "type", location)
   let fingerprint : Map[String, Value] = { "type": Str(kind) }
   let scopes : Map[String, Bool] = Map([])
@@ -250,6 +271,7 @@ fn Context::scheme(
     scopes,
     template: Obj(fingerprint),
     relative: relative_template(Obj(fingerprint)),
+    contents,
   }
   self.cache[name] = parsed
   parsed
