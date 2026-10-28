@@ -20,6 +20,8 @@ pub extend ChangeKind with Eq::{equal, not_equal}
 pub(all) struct OperationChange {
   http_method : String
   path : String
+  before_path : String?
+  after_path : String?
   operation_id : String?
   kind : ChangeKind
   before : @logic.Policy?
@@ -71,8 +73,135 @@ pub fn failure_report(diagnostics : Array[@openapi.Diagnostic]) -> Comparison {
 }
 
 ///|
-fn operation_key(operation : @openapi.Operation) -> String {
-  "\{operation.path}\n\{operation.http_method}"
+priv struct OperationIndex {
+  operations : Map[(String, String), @openapi.Operation]
+  blocked : Map[(String, String), Bool]
+  ambiguous_paths : Map[String, Bool]
+}
+
+///|
+fn operation_order(
+  left : @openapi.Operation,
+  right : @openapi.Operation,
+) -> Int32 {
+  for
+    (a, b) in [
+      (left.path, right.path),
+      (left.http_method, right.http_method),
+      (left.location.uri, right.location.uri),
+      (left.location.pointer, right.location.pointer),
+      (left.operation_id.unwrap_or(""), right.operation_id.unwrap_or("")),
+    ] {
+    let order = a.compare(b)
+    if order != 0 {
+      return order
+    }
+  }
+  0
+}
+
+///|
+fn index_operations(
+  document : @openapi.Document,
+  side : String,
+  diagnostics : Array[@openapi.Diagnostic],
+) -> OperationIndex {
+  let operations : Map[(String, String), @openapi.Operation] = Map([])
+  let blocked : Map[(String, String), Bool] = Map([])
+  let exact : Map[(String, String), Bool] = Map([])
+  let paths : Map[String, Map[String, Bool]] = Map([])
+  let ordered = document.operations.copy()
+  ordered.sort_by(operation_order)
+  for operation in ordered {
+    let shape = @openapi.path_identity(operation.path)
+    // Tag invalid raw paths so /{} cannot collide with a valid /{name} shape.
+    let identity = match shape {
+      Some(shape) => "path:" + shape
+      None => "invalid:" + operation.path
+    }
+    let key = (operation.http_method, identity)
+    let raw_key = (operation.http_method, operation.path)
+    if exact.contains(raw_key) {
+      blocked[key] = true
+      diagnostics.push(@openapi.Diagnostic::{
+        code: "operation-duplicate",
+        message: "the \{side} contains duplicate method and path declarations",
+        location: operation.location,
+      })
+    }
+    exact[raw_key] = true
+    if shape is None {
+      blocked[key] = true
+      diagnostics.push(@openapi.Diagnostic::{
+        code: "auth.path",
+        message: "the \{side} operation has an invalid path template: " +
+        operation.path,
+        location: operation.location,
+      })
+    } else {
+      let raw_paths = match paths.get(identity) {
+        Some(raw_paths) => raw_paths
+        None => {
+          let raw_paths = Map([])
+          paths[identity] = raw_paths
+          raw_paths
+        }
+      }
+      raw_paths[operation.path] = true
+    }
+    if operation.policy is None {
+      diagnostics.push(@openapi.Diagnostic::{
+        code: "operation-incomplete",
+        message: "the \{side} operation has no resolved authentication policy",
+        location: operation.security_location,
+      })
+    }
+    match operations.get(key) {
+      Some(_) => blocked[key] = true
+      None => operations[key] = operation
+    }
+  }
+  let ambiguous_paths : Map[String, Bool] = Map([])
+  for identity, names in paths {
+    if names.length() > 1 {
+      ambiguous_paths[identity] = true
+    }
+  }
+  for operation in ordered {
+    if @openapi.path_identity(operation.path) is Some(shape) &&
+      ambiguous_paths.contains("path:" + shape) {
+      diagnostics.push(@openapi.Diagnostic::{
+        code: "path-duplicate",
+        message: "the \{side} contains different paths with the same template: " +
+        operation.path,
+        location: operation.location,
+      })
+    }
+  }
+  { operations, blocked, ambiguous_paths, }
+}
+
+///|
+fn blocked_change(
+  before : @openapi.Operation?,
+  after : @openapi.Operation?,
+) -> OperationChange {
+  let operation = match after {
+    Some(operation) => operation
+    None => before.unwrap()
+  }
+  {
+    http_method: operation.http_method,
+    path: operation.path,
+    before_path: before.map(operation => operation.path),
+    after_path: after.map(operation => operation.path),
+    operation_id: operation.operation_id,
+    kind: Incomparable,
+    before: None,
+    after: None,
+    witness: None,
+    location: operation.location,
+  }
 }
 
 ///|
@@ -126,7 +255,7 @@ fn scheme_issues(
 }
 
 ///|
-/// Compare operations by exact method and path, preserving partial findings.
+/// Compare exact methods and path-template shapes, preserving original paths.
 pub fn compare(
   before : @openapi.Document,
   after : @openapi.Document,
@@ -136,51 +265,34 @@ pub fn compare(
   for diagnostic in after.diagnostics {
     diagnostics.push(diagnostic)
   }
-  let old_operations : Map[String, @openapi.Operation] = Map([])
-  let new_operations : Map[String, @openapi.Operation] = Map([])
-  let keys : Array[String] = []
-  for operation in before.operations {
-    let key = operation_key(operation)
-    if operation.policy is None {
-      diagnostics.push(@openapi.Diagnostic::{
-        code: "operation-incomplete",
-        message: "the baseline operation has no resolved authentication policy",
-        location: operation.security_location,
-      })
+  let old_index = index_operations(before, "baseline", diagnostics)
+  let new_index = index_operations(after, "candidate", diagnostics)
+  let old_operations = old_index.operations
+  let new_operations = new_index.operations
+  let keys = old_operations.keys().collect()
+  for key in new_operations.keys() {
+    if !old_operations.contains(key) {
+      keys.push(key)
     }
-    if old_operations.contains(key) {
-      diagnostics.push(@openapi.Diagnostic::{
-        code: "operation-duplicate",
-        message: "the baseline contains duplicate method and path declarations",
-        location: operation.location,
-      })
+  }
+  keys.sort_by(fn(left, right) {
+    let path_order = left.1.compare(right.1)
+    if path_order != 0 {
+      path_order
     } else {
-      keys.push(key)
+      left.0.compare(right.0)
     }
-    old_operations[key] = operation
-  }
-  for operation in after.operations {
-    let key = operation_key(operation)
-    if operation.policy is None {
-      diagnostics.push(@openapi.Diagnostic::{
-        code: "operation-incomplete",
-        message: "the candidate operation has no resolved authentication policy",
-        location: operation.security_location,
-      })
-    }
-    if new_operations.contains(key) {
-      diagnostics.push(@openapi.Diagnostic::{
-        code: "operation-duplicate",
-        message: "the candidate contains duplicate method and path declarations",
-        location: operation.location,
-      })
-    } else if !old_operations.contains(key) {
-      keys.push(key)
-    }
-    new_operations[key] = operation
-  }
-  keys.sort()
+  })
   for key in keys {
+    if old_index.blocked.contains(key) ||
+      new_index.blocked.contains(key) ||
+      old_index.ambiguous_paths.contains(key.1) ||
+      new_index.ambiguous_paths.contains(key.1) {
+      changes.push(
+        blocked_change(old_operations.get(key), new_operations.get(key)),
+      )
+      continue
+    }
     match (old_operations.get(key), new_operations.get(key)) {
       (Some(old), Some(new)) => {
         let issues = scheme_issues(old, new)
@@ -219,6 +331,8 @@ pub fn compare(
         changes.push({
           http_method: new.http_method,
           path: new.path,
+          before_path: Some(old.path),
+          after_path: Some(new.path),
           operation_id: new.operation_id,
           kind,
           before: old.policy,
@@ -231,6 +345,8 @@ pub fn compare(
         changes.push({
           http_method: new.http_method,
           path: new.path,
+          before_path: None,
+          after_path: Some(new.path),
           operation_id: new.operation_id,
           kind: Added,
           before: None,
@@ -242,6 +358,8 @@ pub fn compare(
         changes.push({
           http_method: old.http_method,
           path: old.path,
+          before_path: Some(old.path),
+          after_path: None,
           operation_id: old.operation_id,
           kind: Removed,
           before: old.policy,
