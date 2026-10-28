@@ -141,7 +141,10 @@ def main():
         assert any(item["code"] == "auth.base" for item in without_urls["diagnostics"])
         deployed = invoke(["compare", old_api, new_api, *both_urls], 1, format="json")
         assert deployed["document_urls"] == {"before": deployed_url, "after": deployed_url}
-        assert deployed["changes"][0]["location"]["uri"] == new_api.resolve().as_uri()
+        # Without local references, source identity preserves the input path alias.
+        expected_input_uri = new_api.absolute().as_uri()
+        actual_input_uri = deployed["changes"][0]["location"]["uri"]
+        assert actual_input_uri == expected_input_uri, (actual_input_uri, expected_input_uri)
         assert deployed["changes"][0]["witness"]
         text = invoke(["compare", old_api, new_api, *both_urls], 1)
         assert "Baseline document URL: " + deployed_url in text
@@ -149,7 +152,8 @@ def main():
         deployed_sarif = invoke(["compare", old_api, new_api, *both_urls], 1, format="sarif")
         assert deployed_sarif["runs"][0]["properties"]["document_urls"] == deployed["document_urls"]
         physical = deployed_sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
-        assert physical["artifactLocation"]["uri"] == new_api.resolve().as_uri()
+        actual_sarif_uri = physical["artifactLocation"]["uri"]
+        assert actual_sarif_uri == expected_input_uri, (actual_sarif_uri, expected_input_uri)
         wrong_base = invoke(["compare", old_api, new_api,
                              "--before-document-url", deployed_url,
                              "--after-document-url", "https://deploy.example/api/"], 2, format="json")
@@ -222,7 +226,9 @@ def main():
         disabled = invoke(["compare", old_api, new_api, *urls], 2, format="json")
         assert any(item["code"] == "ref.external" for item in disabled["diagnostics"])
         nested = invoke(["compare", old_api, new_api, "--local-refs", *urls], 1, format="json")
-        assert nested["changes"][0]["location"]["uri"] == child.resolve().as_uri()
+        expected_child_uri = child.resolve().as_uri()
+        actual_child_uri = nested["changes"][0]["location"]["uri"]
+        assert actual_child_uri == expected_child_uri, (actual_child_uri, expected_child_uri)
 
         # Query-relative server and endpoint references retain the child filename.
         # This exposes incorrect decoding/double-encoding of %20, %25, and %23.
@@ -237,7 +243,7 @@ def main():
         assert escaped["changes"][0]["location"]["uri"].endswith("/next%20part%25%23.json")
         escaped_sarif = invoke(["compare", old_api, new_api, "--local-refs", *urls], 1, format="sarif")
         artifact = escaped_sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
-        assert artifact["uri"] == child.resolve().as_uri()
+        assert artifact["uri"] == expected_child_uri, (artifact["uri"], expected_child_uri)
 
         # A deployment URL grants no additional access to the local filesystem.
         outside = directory / "outside.json"
