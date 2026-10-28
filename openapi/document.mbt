@@ -67,7 +67,9 @@ fn Context::operation(
     if parsed is Some(parsed) {
       schemes = parsed.schemes.copy()
       for name in schemes {
-        scheme_identities.push(self.identity(name, selection, used=true))
+        scheme_identities.push(
+          self.identity(name, selection, used=true, operation=Some(location)),
+        )
       }
       policy = Some(parsed.policy)
     }
@@ -94,8 +96,9 @@ pub fn parse_document(
   text : String,
   format~ : InputFormat,
   source~ : String = "<input>",
+  document_url~ : String? = None,
 ) -> Document raise DocumentError {
-  parse_entry(text, format~, source~, load=None)
+  parse_entry(text, format~, source~, load=None, document_url~)
 }
 
 ///|
@@ -110,8 +113,9 @@ pub fn parse_with_loader(
   format~ : InputFormat,
   source~ : String,
   load~ : (String, String) -> SourceDocument raise DocumentError,
+  document_url~ : String? = None,
 ) -> Document raise DocumentError {
-  parse_entry(text, format~, source~, load=Some(load))
+  parse_entry(text, format~, source~, load=Some(load), document_url~)
 }
 
 ///|
@@ -120,7 +124,12 @@ fn parse_entry(
   format~ : InputFormat,
   source~ : String,
   load~ : ((String, String) -> SourceDocument raise DocumentError)?,
+  document_url~ : String?,
 ) -> Document raise DocumentError {
+  let effective_url = match document_url {
+    Some(url) => Some(explicit_document_url(url, { uri: source, pointer: "", }))
+    None => legacy_document_url(source)
+  }
   let (root, nodes) = read_input(text, format) catch {
     DocumentError(message) => raise DocumentError(source + ": " + message)
   }
@@ -148,6 +157,9 @@ fn parse_entry(
     requests: Map([]),
     load,
     resource_diagnostics: [],
+    explicit_urls: document_url is Some(_),
+    conflicted_origins: Map([]),
+    origin_children: Map([]),
     bytes: @utf8.encode(text).length(),
     nodes,
     operations: 0,
@@ -156,6 +168,7 @@ fn parse_entry(
   graph.documents[source] = {
     input: { text, format, source, },
     value: Ok(root),
+    document_url: effective_url,
   }
   let diagnostics = []
   let declared = try {
@@ -187,6 +200,7 @@ fn parse_entry(
       location: entry_location.key("servers"),
     },
     operation_servers: Map([]),
+    identity_origins: Map([]),
     servers_cache: Map([]),
     identities_cache: Map([]),
     used_identities: 0,
@@ -319,9 +333,16 @@ fn parse_entry(
       diagnostics.push(item)
     }
   }
+  graph.propagate_origin_conflicts()
+  for index in 0..<operations.length() {
+    operations[index] = context.invalidate_origins(
+      operations[index],
+      diagnostics,
+    )
+  }
   let schemes = []
   for name in sorted_keys(context.cache) {
     schemes.push(context.cache[name].public_scheme)
   }
-  { source, operations, schemes, diagnostics, }
+  { source, document_url: effective_url, operations, schemes, diagnostics, }
 }

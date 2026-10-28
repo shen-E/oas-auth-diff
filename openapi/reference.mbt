@@ -138,7 +138,7 @@ fn Graph::lookup_ref(
         at,
       )
     }
-    self.load_relative(validate_relative(path, at), at)
+    self.load_relative(validate_relative(path, at), path, at)
   }
   let decoded = decode_percent(fragment, at)
   if decoded != "" && !decoded.has_prefix("/") {

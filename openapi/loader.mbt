@@ -16,6 +16,7 @@ fn Graph::failure(
 fn Graph::load_source(
   self : Graph,
   path : String,
+  raw_path : String,
   location : Location,
 ) -> Result[String, LoadFailure] {
   if self.documents.length() >= 64 {
@@ -33,6 +34,24 @@ fn Graph::load_source(
       ),
     )
   }
+  let derived_url = if self.explicit_urls {
+    identity_string(raw_path, location) catch {
+      AuthError(_, message, _) => return Err({ code: "ref.url", message, })
+    }
+    let parent_url = match self.documents.get(location.uri) {
+      Some(cached) => cached.document_url
+      None => None
+    }
+    let url = resolve_http_url(raw_path, parent_url, location) catch {
+      AuthError(_, message, _) => return Err({ code: "ref.url", message, })
+    }
+    identity_string(url, location) catch {
+      AuthError(_, message, _) => return Err({ code: "ref.url", message, })
+    }
+    Some(url)
+  } else {
+    None
+  }
   let load = match self.load {
     Some(load) => load
     None => abort("loader is absent")
@@ -46,7 +65,21 @@ fn Graph::load_source(
       message: "Loader returned an empty canonical source identity",
     })
   }
+  let document_url = if self.explicit_urls {
+    derived_url
+  } else {
+    legacy_document_url(input.source)
+  }
   if self.documents.get(input.source) is Some(cached) {
+    self.record_origin_edge(location.uri, input.source)
+    if cached.document_url != document_url {
+      self.conflicted_origins[input.source] = true
+      return Err({
+        code: "ref.conflict",
+        message: "Canonical source has conflicting document URLs: " +
+        input.source,
+      })
+    }
     if cached.input.text != input.text || cached.input.format != input.format {
       return Err({
         code: "ref.conflict",
@@ -97,7 +130,8 @@ fn Graph::load_source(
       }
     }
   }
-  self.documents[input.source] = { input, value, }
+  self.documents[input.source] = { input, value, document_url, }
+  self.record_origin_edge(location.uri, input.source)
   match value {
     Ok(_) => Ok(input.source)
     Err(failure) => Err(failure)
@@ -108,6 +142,7 @@ fn Graph::load_source(
 fn Graph::load_relative(
   self : Graph,
   path : String,
+  raw_path : String,
   location : Location,
 ) -> String raise AuthError {
   let requests = match self.requests.get(location.uri) {
@@ -118,11 +153,12 @@ fn Graph::load_relative(
       requests
     }
   }
-  let result = match requests.get(path) {
+  let key = if self.explicit_urls { raw_path } else { path }
+  let result = match requests.get(key) {
     Some(result) => result
     None => {
-      let result = self.load_source(path, location)
-      requests[path] = result
+      let result = self.load_source(path, raw_path, location)
+      requests[key] = result
       result
     }
   }
