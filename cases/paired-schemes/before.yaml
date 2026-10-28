@@ -1,0 +1,20 @@
+openapi: 3.1.1
+info:
+  title: Deployment API
+  version: 1.0.0
+components:
+  securitySchemes:
+    Session:
+      type: http
+      scheme: bearer
+    Gate:
+      $ref: schemes.json#/Gate
+security:
+  - Session: []
+    Gate: []
+paths:
+  /deployments:
+    post:
+      responses:
+        '202':
+          description: Deployment accepted

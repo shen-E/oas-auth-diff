@@ -39,7 +39,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.4.0" in invoke(["--version"], 0)
+    assert "0.5.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -395,6 +395,129 @@ def main():
 
         for extra in (["--local-refs", "--local-refs"], ["--ref-root"], ["--ref-root", directory, "--ref-root", directory], ["--format", "xml"]):
             invoke(["compare", old, new, *extra], 2, format="json")
+
+    with tempfile.TemporaryDirectory(prefix="oas-auth-diff-paired-schemes-") as directory:
+        directory = Path(directory)
+        entries = []
+        for label in ("before", "after"):
+            base = directory / label
+            (base / "defs").mkdir(parents=True)
+            (base / "defs/key.yaml").write_text(
+                "B:\n  type: apiKey\n  in: header\n  name: X-Pair\n", encoding="utf-8"
+            )
+            entries.append(base / "api.json")
+        old, new = entries
+        baseline = {
+            "openapi": "3.1.1",
+            "components": {"securitySchemes": {
+                "A": {"type": "http", "scheme": "bearer"},
+                "B": {"$ref": "defs/key.yaml#/B"},
+                "Stable": {"type": "http", "scheme": "basic"},
+                "Unrelated": {"$ref": "never-read.json#/Unrelated"},
+            }},
+            "paths": {"/paired": {"get": {"security": [{"A": [], "B": []}]}}},
+        }
+        candidate = copy.deepcopy(baseline)
+        candidate["paths"]["/paired"]["get"]["security"] = [{"A": []}]
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+
+        # B must be resolved on both sides even though the candidate drops it.
+        paired = invoke(["compare", old, new, "--local-refs"], 1, format="json")
+        change = paired["changes"][0]
+        assert change["kind"] == "weakened"
+        assert change["witness"] == [{"kind": "credential", "scheme": "A"}]
+        expected_uri = new.resolve().as_uri()
+        assert change["location"]["uri"] == expected_uri, (change["location"]["uri"], expected_uri)
+        assert "weakened" in invoke(["compare", old, new, "--local-refs"], 1)
+        paired_sarif = invoke(["compare", old, new, "--local-refs"], 1, format="sarif")
+        result = paired_sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "auth-regression"
+        assert result["locations"][0]["properties"]["jsonPointer"] == "/paths/~1paired/get/security"
+        invoke(["compare", new, old, "--local-refs"], 0, format="json")
+
+        candidate["paths"]["/paired"]["get"]["security"] = []
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        anonymous = invoke(["compare", old, new, "--local-refs"], 1, format="json")
+        assert anonymous["changes"][0]["witness"] == []
+        candidate["paths"]["/paired"]["get"]["security"] = [{"A": []}]
+
+        # Missing or changed evidence is incomplete, retaining independent findings.
+        baseline["paths"]["/stable"] = {"get": {"security": [{"Stable": ["operator"]}]}}
+        candidate["paths"]["/stable"] = {"get": {"security": [{"Stable": []}]}}
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+
+        def incomplete_pair(extra=(), *, format="json"):
+            report = invoke(["compare", old, new, *extra], 2, format=format)
+            if format == "json":
+                assert report["complete"] is False
+                assert any(item["path"] == "/paired" and item["kind"] == "incomparable" for item in report["changes"])
+                assert any(item["path"] == "/stable" and item["kind"] == "weakened" and item["witness"] for item in report["changes"])
+            return report
+
+        incomplete_pair()
+        key_file = new.parent / "defs/key.yaml"
+        key_file.write_text("B:\n  type: apiKey\n  in: header\n  name: X-Changed\n", encoding="utf-8")
+        incomplete_pair(["--local-refs"])
+        incomplete_pair(["--local-refs"], format="sarif")
+        key_file.write_text("B: []\n", encoding="utf-8")
+        malformed = incomplete_pair(["--local-refs"])
+        expected_definition_uri = key_file.resolve().as_uri()
+        assert any(item["location"]["uri"] == expected_definition_uri for item in malformed["diagnostics"]), malformed["diagnostics"]
+        key_file.unlink()
+        incomplete_pair(["--local-refs"])
+        del candidate["components"]["securitySchemes"]["B"]
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        incomplete_pair(["--local-refs"])
+
+        outside = directory / "outside.json"
+        outside.write_text(json.dumps({"B": {"type": "apiKey", "in": "header", "name": "X-Pair"}}), encoding="utf-8")
+        candidate["components"]["securitySchemes"]["B"] = {"$ref": "../outside.json#/B"}
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        urls = ["--before-document-url", "https://deploy.example/before/api.json",
+                "--after-document-url", "https://deploy.example/after/api.json"]
+        confined = incomplete_pair(["--local-refs", *urls])
+        assert any(item["code"] == "ref.load" for item in confined["diagnostics"])
+        assert confined["document_urls"] == {
+            "before": "https://deploy.example/before/api.json",
+            "after": "https://deploy.example/after/api.json",
+        }
+        shared_root = invoke(["compare", old, new, "--ref-root", directory, *urls], 1, format="json")
+        assert shared_root["document_urls"] == confined["document_urls"]
+
+        # Added and removed operations do not demand their names on the other side.
+        simple = {"openapi": "3.1.1", "components": {"securitySchemes": {
+            "A": {"type": "http", "scheme": "bearer"},
+            "Unrelated": {"$ref": "never-read.json#/Unrelated"},
+        }}, "paths": {"/common": {"get": {"security": [{"A": []}]}}}}
+        baseline = copy.deepcopy(simple)
+        candidate = copy.deepcopy(simple)
+        baseline["components"]["securitySchemes"].update({
+            "OnlyOld": {"type": "http", "scheme": "basic"},
+            "OnlyNew": {"$ref": "never-read-new.json#/OnlyNew"},
+        })
+        candidate["components"]["securitySchemes"].update({
+            "OnlyOld": {"$ref": "never-read-old.json#/OnlyOld"},
+            "OnlyNew": {"type": "http", "scheme": "basic"},
+        })
+        baseline["paths"]["/removed"] = {"get": {"security": [{"OnlyOld": []}]}}
+        candidate["paths"]["/added"] = {"get": {"security": [{"OnlyNew": []}]}}
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        untouched = invoke(["compare", old, new, "--local-refs"], 0, format="json")
+        assert {item["kind"] for item in untouched["changes"]} == {"equivalent", "added", "removed"}
+        assert untouched["diagnostics"] == []
+        invoke(["compare", old, new], 0, format="json")
+
+        # Pair parsing identifies the failed entry without changing source identity.
+        invalid = directory / "invalid.json"
+        invalid.write_text('{"openapi": "3.1.1", "paths": ', encoding="utf-8")
+        for left, right, bad_source in ((invalid, new, invalid), (old, invalid, invalid)):
+            failure = invoke(["compare", left, right], 2, format="json")
+            actual_uri = failure["diagnostics"][0]["location"]["uri"]
+            expected_uri = bad_source.absolute().as_uri()
+            assert actual_uri == expected_uri, (actual_uri, expected_uri)
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

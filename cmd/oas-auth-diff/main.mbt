@@ -22,7 +22,7 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.4.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
+  "oas-auth-diff 0.5.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
 }
 
 ///|
@@ -154,12 +154,10 @@ fn file_uri(path : String) -> String {
 }
 
 ///|
-fn load_document(
+fn read_source(
   path : String,
   local_refs : Bool,
-  ref_root : String?,
-  document_url : String?,
-) -> @openapi.Document raise {
+) -> @openapi.SourceDocument raise {
   let extension = @path.Path(path).extname().to_owned()
   let format = match extension {
     ".json" => @openapi.Json
@@ -179,21 +177,30 @@ fn load_document(
     _ if length > 16777216 => raise CliError("input exceeds 16 MiB: \{path}")
     _ => ()
   }
-  let text = @utf8.decode(bytes[0:length])
-  if local_refs {
-    let boundary = canonical_root(
-      ref_root.unwrap_or(@path.Path(path).resolve().dirname().to_string()),
-    )
-    @openapi.parse_with_loader(
-      text,
-      format~,
-      source=canonical_source_uri(path),
-      document_url~,
-      load=(from, relative) => load_local_reference(boundary, from, relative),
-    )
-  } else {
-    @openapi.parse_document(text, format~, source=file_uri(path), document_url~)
+  {
+    text: @utf8.decode(bytes[0:length]),
+    format,
+    source: if local_refs {
+      canonical_source_uri(path)
+    } else {
+      file_uri(path)
+    },
   }
+}
+
+///|
+fn local_loader(
+  path : String,
+  enabled : Bool,
+  ref_root : String?,
+) -> ((String, String) -> @openapi.SourceDocument raise @openapi.DocumentError)? raise {
+  if !enabled {
+    return None
+  }
+  let boundary = canonical_root(
+    ref_root.unwrap_or(@path.Path(path).resolve().dirname().to_string()),
+  )
+  Some((from, relative) => load_local_reference(boundary, from, relative))
 }
 
 ///|
@@ -233,7 +240,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.4.0")
+      println("oas-auth-diff 0.5.0")
       return 0
     }
     _ => ()
@@ -246,25 +253,42 @@ fn run(args : Array[String]) -> Int32 {
         selected_format(args),
       )
   }
-  let before = load_document(
-    options.before,
-    options.local_refs,
-    options.ref_root,
-    options.before_document_url,
-  ) catch {
+  let before = read_source(options.before, options.local_refs) catch {
     error =>
       return failed(error.to_string(), file_uri(options.before), options.format)
   }
-  let after = load_document(
-    options.after,
+  let before_load = local_loader(
+    options.before,
     options.local_refs,
     options.ref_root,
-    options.after_document_url,
   ) catch {
+    error => return failed(error.to_string(), before.source, options.format)
+  }
+  let after = read_source(options.after, options.local_refs) catch {
     error =>
       return failed(error.to_string(), file_uri(options.after), options.format)
   }
-  let comparison = @diff.compare(before, after)
+  let after_load = local_loader(
+    options.after,
+    options.local_refs,
+    options.ref_root,
+  ) catch {
+    error => return failed(error.to_string(), after.source, options.format)
+  }
+  let pair = @openapi.parse_pair(
+    before,
+    after,
+    before_load~,
+    after_load~,
+    before_document_url=options.before_document_url,
+    after_document_url=options.after_document_url,
+  ) catch {
+    @openapi.Before(error) =>
+      return failed(error.to_string(), before.source, options.format)
+    @openapi.After(error) =>
+      return failed(error.to_string(), after.source, options.format)
+  }
+  let comparison = @diff.compare(pair.before, pair.after)
   write_report(comparison, options.format)
   comparison.exit_code()
 }
