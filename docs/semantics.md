@@ -66,8 +66,9 @@ For each operation, its `servers` overrides the path item's list, which in turn
 overrides the entry document's list. An absent or empty effective list supplies
 the default `/` server. Referenced path items retain the source of their server
 declaration. Relative servers require an HTTP(S) retrieval URI for that
-declaration; a CLI `file:` URI supplies no deployment origin and produces
-`auth.base`. There is no network discovery.
+declaration. A configured document URL supplies this origin independently of the
+source identity; an unconfigured CLI `file:` URI produces `auth.base`. There is
+no network discovery.
 
 For relative endpoints, each effective server generates a complete tuple of
 OAuth flow addresses or an OpenID address. The tuple set is sorted and
@@ -99,6 +100,45 @@ and the entry's used identity strings to 32 MiB. Exceeding these limits marks
 affected analysis incomplete. A separate budget of 100,000 attempts and 8 MiB
 collects unused local identities when available; its exhaustion does not
 consume the used-identity budget or load external files.
+
+## Document deployment context
+
+`parse_document` and `parse_with_loader` accept an optional `document_url`
+(`Some(url)`). The CLI exposes it separately as `--before-document-url` and
+`--after-document-url`. Each value must be an absolute HTTP(S) document URL,
+without a fragment, within the 8,192-byte URI limit. Invalid explicit values
+fail parsing even when the specification uses absolute authentication URLs.
+Queries are allowed. No option implies the other side's address.
+
+The source URI identifies input content, loader requests, cache entries, cycles,
+and evidence locations. The document URL supplies deployment context for relative
+servers. OpenAPI allows an expected retrieval location to differ from the current
+physical location under its [base URI
+rules](https://spec.openapis.org/oas/v3.1.1.html#relative-references-in-api-description-uris).
+Providing a URL does not fetch it, enable file references, or change confinement.
+
+With an explicit entry URL, each external document's URL is resolved from the
+referring document URL and the original URI-escaped `$ref` file component.
+The loader still receives a decoded relative file path. Encoded `#`, `?`, `%`,
+and `/` retain their URI meaning during URL resolution. Nested references use
+the current document's derived URL. Without an explicit entry URL, each HTTP(S)
+source retains its existing default origin; local sources do not acquire a
+guessed deployment address.
+
+Two canonical sources can share an expected URL without merging content. One
+canonical source with different derived URLs produces `ref.conflict`. Policies
+whose relative server resolution depended on that ambiguous source are
+withdrawn, including identities cached before the conflicting alias appeared.
+Independent absolute-server or absolute-endpoint findings remain available.
+The result is incomplete with exit code 2.
+
+`Document.document_url` and `Comparison.before_document_url` /
+`after_document_url` retain normalized entry context. JSON reports add
+`document_urls: {before, after}`; SARIF records it in run properties. These
+additive fields keep JSON `schema_version: 1`. Missing context is `null`.
+Fatal load/parse reports contain `null` on both sides because no comparison was
+constructed from parsed documents. Source locations continue to name the input
+files and their JSON Pointers.
 
 ## Input boundaries
 
