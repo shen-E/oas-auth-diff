@@ -29,10 +29,16 @@ pub fn parse_pair(
   }
   let candidate_indices : Map[(String, String), Int32] = Map([])
   for index, operation in candidate.operations {
-    candidate_indices[(operation.http_method, operation.path)] = index
+    if path_identity(operation.path) is Some(identity) {
+      candidate_indices[(operation.http_method, identity)] = index
+    }
   }
   for index, old in baseline.operations {
-    if candidate_indices.get((old.http_method, old.path)) is Some(other) {
+    let identity = match path_identity(old.path) {
+      Some(identity) => identity
+      None => continue
+    }
+    if candidate_indices.get((old.http_method, identity)) is Some(other) {
       let next = candidate.operations[other]
       baseline.context.graph.propagate_origin_conflicts()
       candidate.context.graph.propagate_origin_conflicts()

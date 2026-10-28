@@ -65,6 +65,14 @@ fn change_json(change : OperationChange) -> Json {
   {
     "method": change.http_method,
     "path": change.path,
+    "before_path": match change.before_path {
+      Some(path) => Json(path)
+      None => Json::null()
+    },
+    "after_path": match change.after_path {
+      Some(path) => Json(path)
+      None => Json::null()
+    },
     "operation_id": match change.operation_id {
       Some(value) => Json(value)
       None => Json::null()
@@ -125,6 +133,14 @@ fn grants_text(grants : @logic.GrantSet) -> String {
 }
 
 ///|
+fn change_path(change : OperationChange) -> String {
+  match (change.before_path, change.after_path) {
+    (Some(before), Some(after)) if before != after => before + " -> " + after
+    _ => change.path
+  }
+}
+
+///|
 pub fn render_text(comparison : Comparison) -> String {
   let lines = [
     "oas-auth-diff: \{if comparison.complete { "complete" } else { "incomplete" }}",
@@ -142,7 +158,7 @@ pub fn render_text(comparison : Comparison) -> String {
       ""
     }
     lines.push(
-      "\{change.http_method} \{change.path}: \{kind_name(change.kind)}\{review}",
+      "\{change.http_method} \{change_path(change)}: \{kind_name(change.kind)}\{review}",
     )
     if change.witness is Some(grants) {
       lines.push("  new allows, old rejects: \{grants_text(grants)}")
@@ -270,7 +286,7 @@ pub fn render_sarif(comparison : Comparison) -> String {
     if regression || added_anonymous(change) {
       let message = if regression {
         let grants = change.witness.map(grants_text).unwrap_or("unavailable")
-        "\{change.http_method} \{change.path}: \{kind_name(change.kind)}; new allows, old rejects: \{grants}"
+        "\{change.http_method} \{change_path(change)}: \{kind_name(change.kind)}; new allows, old rejects: \{grants}"
       } else {
         "\{change.http_method} \{change.path}: added anonymous operation; review access requirements"
       }
@@ -307,7 +323,7 @@ pub fn render_sarif(comparison : Comparison) -> String {
         "tool": {
           "driver": {
             "name": "oas-auth-diff",
-            "version": "0.5.0",
+            "version": "0.6.0",
             "informationUri": "https://github.com/shen-E/oas-auth-diff",
             "rules": [
               {

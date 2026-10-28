@@ -39,7 +39,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.5.0" in invoke(["--version"], 0)
+    assert "0.6.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -518,6 +518,105 @@ def main():
             actual_uri = failure["diagnostics"][0]["location"]["uri"]
             expected_uri = bad_source.absolute().as_uri()
             assert actual_uri == expected_uri, (actual_uri, expected_uri)
+
+    with tempfile.TemporaryDirectory(prefix="oas-auth-diff-path-parameters-") as directory:
+        directory = Path(directory)
+        old = directory / "before.json"
+        new = directory / "after.json"
+        old_path = "/orders/{id}"
+        new_path = "/orders/{order_id}"
+        baseline = json.loads(after.read_text(encoding="utf-8"))
+        baseline["paths"] = {old_path: {"get": {
+            "operationId": "getOrder",
+            "security": [{"account": ["orders:read", "orders:write"]}],
+        }}}
+        candidate = copy.deepcopy(baseline)
+        candidate["paths"] = {new_path: {"get": {"operationId": "getOrder", "security": []}}}
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+
+        # Renaming a template parameter must not hide removal of authentication.
+        renamed = invoke(["compare", old, new], 1, format="json")
+        assert len(renamed["changes"]) == 1
+        change = renamed["changes"][0]
+        assert change["kind"] == "weakened" and change["witness"] == []
+        assert (change["before_path"], change["after_path"], change["path"]) == (old_path, new_path, new_path)
+        expected_pointer = "/paths/~1orders~1{order_id}/get/security"
+        expected_uri = new.absolute().as_uri()
+        assert change["location"] == {"uri": expected_uri, "pointer": expected_pointer}, (change["location"], expected_uri)
+        text = invoke(["compare", old, new], 1)
+        assert old_path + " -> " + new_path in text
+        renamed_sarif = invoke(["compare", old, new], 1, format="sarif")
+        result = renamed_sarif["runs"][0]["results"][0]
+        assert old_path + " -> " + new_path in result["message"]["text"]
+        assert (result["properties"]["before_path"], result["properties"]["after_path"]) == (old_path, new_path)
+        assert result["locations"][0]["properties"]["jsonPointer"] == expected_pointer
+        invoke(["compare", new, old], 0, format="json")
+
+        candidate["paths"][new_path]["get"]["security"] = [{"account": ["orders:read"]}]
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        scope_change = invoke(["compare", old, new], 1, format="json")
+        assert {item.get("name") for item in scope_change["changes"][0]["witness"]} == {None, "orders:read"}
+        candidate["paths"][new_path]["get"]["security"] = copy.deepcopy(baseline["paths"][old_path]["get"]["security"])
+        candidate["paths"][new_path]["get"]["operationId"] = "renamedLabel"
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        equivalent = invoke(["compare", old, new], 0, format="json")
+        assert equivalent["changes"][0]["kind"] == "equivalent"
+
+        # HTTP methods and literal parts of paths still identify different operations.
+        for different, verb in ((new_path, "post"), ("/orders/me", "get"),
+                                ("/purchases/{order_id}", "get"), ("/Orders/{order_id}", "get"),
+                                ("/orders/{order_id}/", "get"), ("/orders/%7Border_id%7D", "get")):
+            candidate["paths"] = {different: {verb: {"operationId": "getOrder", "security": []}}}
+            new.write_text(json.dumps(candidate), encoding="utf-8")
+            distinct = invoke(["compare", old, new], 0, format="json")
+            assert {item["kind"] for item in distinct["changes"]} == {"added", "removed"}
+            added = next(item for item in distinct["changes"] if item["kind"] == "added")
+            removed = next(item for item in distinct["changes"] if item["kind"] == "removed")
+            assert added["before_path"] is None and added["after_path"] == different
+            assert removed["before_path"] == old_path and removed["after_path"] is None
+
+        baseline["paths"]["/stable"] = copy.deepcopy(baseline["paths"][old_path])
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        stable = {"get": {"security": [{"account": ["orders:read"]}]}}
+        candidate["paths"] = {
+            "/orders/{first}": {"get": {"security": []}},
+            "/orders/{second}": {"$ref": "never-read-duplicate.json#/item", "post": {"security": []}},
+            "/stable": stable,
+        }
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        duplicate = invoke(["compare", old, new, "--local-refs"], 2, format="json")
+        assert any(item["code"] == "path-duplicate" for item in duplicate["diagnostics"])
+        assert not any(item["code"] == "ref.load" for item in duplicate["diagnostics"])
+        assert any(item["path"] == "/stable" and item["kind"] == "weakened" for item in duplicate["changes"])
+        assert not any(item["after_path"] in ("/orders/{first}", "/orders/{second}") for item in duplicate["changes"])
+
+        for invalid in ("orders/{id}", "/orders/{}", "/orders/{id", "/orders/id}",
+                        "/orders/{{id}}", "/orders/{one/two}"):
+            candidate["paths"] = {invalid: {"$ref": "never-read-invalid.json#/item"}, "/stable": stable}
+            new.write_text(json.dumps(candidate), encoding="utf-8")
+            malformed = invoke(["compare", old, new, "--local-refs"], 2, format="json")
+            assert any(item["code"] == "auth.path" for item in malformed["diagnostics"])
+            assert not any(item["code"] == "ref.load" for item in malformed["diagnostics"])
+            assert any(item["path"] == "/stable" and item["kind"] == "weakened" for item in malformed["changes"])
+
+        # Paired loading follows the renamed operation and keeps the candidate pointer.
+        (directory / "key.yaml").write_text("B:\n  type: http\n  scheme: basic\n", encoding="utf-8")
+        baseline = {"openapi": "3.1.1", "components": {"securitySchemes": {
+            "A": {"type": "http", "scheme": "bearer"},
+            "B": {"$ref": "key.yaml#/B"},
+        }}, "paths": {old_path: {"get": {"security": [{"A": [], "B": []}]}}}}
+        candidate = copy.deepcopy(baseline)
+        candidate["paths"] = {new_path: {"get": {"security": [{"A": []}]}}}
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        paired = invoke(["compare", old, new, "--local-refs"], 1, format="json")
+        change = paired["changes"][0]
+        assert change["witness"] == [{"kind": "credential", "scheme": "A"}]
+        expected_uri = new.resolve().as_uri()
+        assert change["location"] == {"uri": expected_uri, "pointer": expected_pointer}, (change["location"], expected_uri)
+        assert (change["before_path"], change["after_path"]) == (old_path, new_path)
+        invoke(["compare", old, new], 2, format="json")
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

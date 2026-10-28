@@ -47,6 +47,8 @@ pub fn Comparison::to_repr(Self) -> @debug.Repr
 pub(all) struct OperationChange {
   http_method : String
   path : String
+  before_path : String?
+  after_path : String?
   operation_id : String?
   kind : ChangeKind
   before : @logic.Policy?
