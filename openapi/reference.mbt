@@ -201,9 +201,10 @@ fn Graph::resolve(
   value : Value,
   at : Location,
   external~ : Bool = true,
-) -> (Map[String, Value], Location) raise AuthError {
+) -> (Map[String, Value], Location, Array[String]) raise AuthError {
   let mut current = object(value, at)
   let mut location = at
+  let contents = [at.uri]
   let seen : Map[(String, String), Bool] = Map([])
   seen[(at.uri, at.pointer)] = true
   while current.get("$ref") is Some(reference) {
@@ -226,6 +227,9 @@ fn Graph::resolve(
       reference_location,
       external~,
     )
+    if !contents.contains(target.uri) {
+      contents.push(target.uri)
+    }
     let identity = (target.uri, target.pointer)
     if seen.contains(identity) {
       issue("ref.cycle", "Circular reference: " + reference, reference_location)
@@ -239,5 +243,5 @@ fn Graph::resolve(
     current = object(value, target)
     location = target
   }
-  (current, location)
+  (current, location, contents)
 }

@@ -106,6 +106,41 @@ pub(all) struct Document {
 pub extend Document with Debug::{to_repr}
 
 ///|
+/// Two independently parsed snapshots with peer-required scheme identities.
+pub(all) struct DocumentPair {
+  before : Document
+  after : Document
+} derive(Debug)
+
+///|
+pub extend DocumentPair with Debug::{to_repr}
+
+///|
+pub(all) suberror PairError {
+  Before(DocumentError)
+  After(DocumentError)
+} derive(Debug)
+
+///|
+pub extend PairError with Debug::{to_repr}
+
+///|
+pub fn PairError::to_string(self : PairError) -> String {
+  match self {
+    Before(error) => "baseline: " + error.to_string()
+    After(error) => "candidate: " + error.to_string()
+  }
+}
+
+///|
+pub impl Show for PairError with fn output(self, logger) {
+  logger.write_string(self.to_string())
+}
+
+///|
+pub extend PairError with Show::{output}
+
+///|
 pub(all) suberror DocumentError {
   DocumentError(String)
 } derive(Debug, Eq)
@@ -158,6 +193,7 @@ priv struct ParsedScheme {
   scopes : Map[String, Bool]
   template : Value
   relative : Bool
+  contents : Array[String]
 }
 
 ///|
@@ -166,10 +202,13 @@ priv struct Context {
   minor : Int32
   declared : Map[String, Value]
   cache : Map[String, ParsedScheme]
+  scheme_failures : Map[(String, Bool), AuthError]
   graph : Graph
   entry_servers : ServerSelection
   operation_servers : Map[(String, String), ServerSelection]
   identity_origins : Map[(String, String, String), Array[String]]
+  identity_contents : Map[(String, String, String), Array[String]]
+  operation_contents : Map[(String, String), Array[String]]
   servers_cache : Map[(String, String), Result[ServerSet, AuthError]]
   identities_cache : Map[
     (String, String, String),
@@ -188,6 +227,7 @@ priv struct InstantiatedScheme {
   tuples : Int32
   bytes : Int32
   origins : Array[String]
+  contents : Array[String]
 }
 
 ///|
@@ -244,11 +284,20 @@ priv struct Graph {
   resource_diagnostics : Array[Diagnostic]
   explicit_urls : Bool
   conflicted_origins : Map[String, Bool]
+  conflicted_contents : Map[String, Bool]
   origin_children : Map[String, Map[String, Bool]]
   mut bytes : Int32
   mut nodes : Int32
   mut operations : Int32
   mut atoms : Int32
+}
+
+///|
+priv struct LiveDocument {
+  context : Context
+  operations : Array[Operation]
+  diagnostics : Array[Diagnostic]
+  document_url : String?
 }
 
 ///|

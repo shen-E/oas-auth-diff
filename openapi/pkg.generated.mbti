@@ -9,6 +9,8 @@ import {
 // Values
 pub fn parse_document(String, format~ : InputFormat, source? : String, document_url? : String?) -> Document raise DocumentError
 
+pub fn parse_pair(SourceDocument, SourceDocument, before_load? : ((String, String) -> SourceDocument raise DocumentError)?, after_load? : ((String, String) -> SourceDocument raise DocumentError)?, before_document_url? : String?, after_document_url? : String?) -> DocumentPair raise PairError
+
 pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError, document_url? : String?) -> Document raise DocumentError
 
 // Errors
@@ -21,6 +23,15 @@ pub fn DocumentError::output(Self, &Logger) -> Unit
 pub fn DocumentError::to_repr(Self) -> @debug.Repr
 pub fn DocumentError::to_string(Self) -> String
 pub impl Show for DocumentError
+
+pub(all) suberror PairError {
+  Before(DocumentError)
+  After(DocumentError)
+} derive(@debug.Debug)
+pub fn PairError::output(Self, &Logger) -> Unit
+pub fn PairError::to_repr(Self) -> @debug.Repr
+pub fn PairError::to_string(Self) -> String
+pub impl Show for PairError
 
 // Types and methods
 pub(all) struct Diagnostic {
@@ -41,6 +52,12 @@ pub(all) struct Document {
   diagnostics : Array[Diagnostic]
 } derive(@debug.Debug)
 pub fn Document::to_repr(Self) -> @debug.Repr
+
+pub(all) struct DocumentPair {
+  before : Document
+  after : Document
+} derive(@debug.Debug)
+pub fn DocumentPair::to_repr(Self) -> @debug.Repr
 
 pub(all) enum InputFormat {
   Json

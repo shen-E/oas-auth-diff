@@ -30,8 +30,11 @@ fn Context::operation(
   inherited : ParsedSecurity?,
   inherited_location : Location,
   path_servers : ServerSelection?,
+  contents : Array[String],
   diagnostics : Array[Diagnostic],
 ) -> Operation {
+  let operation_key = (verb.to_upper(), path)
+  self.operation_contents[operation_key] = contents
   let mut operation_id = None
   let mut policy = None
   let mut schemes = []
@@ -53,7 +56,7 @@ fn Context::operation(
       Some(value) => { value: Some(value), location: location.key("servers"), }
       None => path_servers.unwrap_or(self.entry_servers)
     }
-    self.operation_servers[(location.uri, location.pointer)] = selection
+    self.operation_servers[operation_key] = selection
     let parsed = match obj.get("security") {
       Some(value) => Some(self.security(value, security_location, charge=true))
       None => {
@@ -68,7 +71,12 @@ fn Context::operation(
       schemes = parsed.schemes.copy()
       for name in schemes {
         scheme_identities.push(
-          self.identity(name, selection, used=true, operation=Some(location)),
+          self.identity(
+            name,
+            selection,
+            used=true,
+            operation=Some(operation_key),
+          ),
         )
       }
       policy = Some(parsed.policy)
@@ -119,13 +127,13 @@ pub fn parse_with_loader(
 }
 
 ///|
-fn parse_entry(
+fn prepare_entry(
   text : String,
   format~ : InputFormat,
   source~ : String,
   load~ : ((String, String) -> SourceDocument raise DocumentError)?,
   document_url~ : String?,
-) -> Document raise DocumentError {
+) -> LiveDocument raise DocumentError {
   let effective_url = match document_url {
     Some(url) => Some(explicit_document_url(url, { uri: source, pointer: "", }))
     None => legacy_document_url(source)
@@ -159,6 +167,7 @@ fn parse_entry(
     resource_diagnostics: [],
     explicit_urls: document_url is Some(_),
     conflicted_origins: Map([]),
+    conflicted_contents: Map([]),
     origin_children: Map([]),
     bytes: @utf8.encode(text).length(),
     nodes,
@@ -194,6 +203,7 @@ fn parse_entry(
     minor,
     declared,
     cache: Map([]),
+    scheme_failures: Map([]),
     graph,
     entry_servers: {
       value: obj.get("servers"),
@@ -201,6 +211,8 @@ fn parse_entry(
     },
     operation_servers: Map([]),
     identity_origins: Map([]),
+    identity_contents: Map([]),
+    operation_contents: Map([]),
     servers_cache: Map([]),
     identities_cache: Map([]),
     used_identities: 0,
@@ -263,7 +275,10 @@ fn parse_entry(
       if !path.has_prefix("/") {
         issue("auth.path", "OpenAPI path must begin with /", location)
       }
-      let (item, resolved_location) = graph.resolve(paths[path], location)
+      let (item, resolved_location, contents) = graph.resolve(
+        paths[path],
+        location,
+      )
       for key in item.keys() {
         if !methods.contains(key) &&
           key != "summary" &&
@@ -306,6 +321,7 @@ fn parse_entry(
               inherited,
               inherited_location,
               path_servers,
+              contents,
               diagnostics,
             ),
           )
@@ -315,6 +331,30 @@ fn parse_entry(
       error => diagnostics.push(diagnostic(error))
     }
   }
+  { context, operations, diagnostics, document_url: effective_url, }
+}
+
+///|
+fn parse_entry(
+  text : String,
+  format~ : InputFormat,
+  source~ : String,
+  load~ : ((String, String) -> SourceDocument raise DocumentError)?,
+  document_url~ : String?,
+) -> Document raise DocumentError {
+  finalize_entry(prepare_entry(text, format~, source~, load~, document_url~))
+}
+
+///|
+fn finalize_entry(live : LiveDocument) -> Document {
+  let context = live.context
+  let operations = live.operations
+  let diagnostics = live.diagnostics
+  let graph = context.graph
+  let source = context.source
+  let declared = context.declared
+  let effective_url = live.document_url
+  graph.propagate_origin_conflicts()
   // All used identities are charged before best-effort unused work begins.
   for index in 0..<operations.length() {
     operations[index] = context.complete_unused_identities(operations[index])
@@ -333,16 +373,18 @@ fn parse_entry(
       diagnostics.push(item)
     }
   }
-  graph.propagate_origin_conflicts()
   for index in 0..<operations.length() {
-    operations[index] = context.invalidate_origins(
+    operations[index] = context.invalidate_dependencies(
       operations[index],
       diagnostics,
     )
   }
   let schemes = []
   for name in sorted_keys(context.cache) {
-    schemes.push(context.cache[name].public_scheme)
+    let parsed = context.cache[name]
+    if !parsed.contents.any(source => graph.conflicted_contents.contains(source)) {
+      schemes.push(parsed.public_scheme)
+    }
   }
   { source, document_url: effective_url, operations, schemes, diagnostics, }
 }
