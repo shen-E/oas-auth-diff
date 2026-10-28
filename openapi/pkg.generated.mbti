@@ -13,6 +13,8 @@ pub fn parse_pair(SourceDocument, SourceDocument, before_load? : ((String, Strin
 
 pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError, document_url? : String?) -> Document raise DocumentError
 
+pub fn path_identity(String) -> String?
+
 // Errors
 pub(all) suberror DocumentError {
   DocumentError(String)

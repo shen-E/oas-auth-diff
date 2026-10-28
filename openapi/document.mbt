@@ -263,18 +263,12 @@ fn prepare_entry(
     "delete", "get", "head", "options", "patch", "post", "put", "trace",
   ]
   let mut exhausted = false
-  for path in sorted_keys(paths) {
+  for path in analyzable_paths(paths, entry_location.key("paths"), diagnostics) {
     if exhausted {
       break
     }
-    if path.has_prefix("x-") {
-      continue
-    }
     let location = entry_location.key("paths").key(path)
     try {
-      if !path.has_prefix("/") {
-        issue("auth.path", "OpenAPI path must begin with /", location)
-      }
       let (item, resolved_location, contents) = graph.resolve(
         paths[path],
         location,
