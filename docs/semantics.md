@@ -33,9 +33,50 @@ Weakened and mixed operations fail the gate because each has a new accepted
 permission set. Runtime comparison uses normalized subset tests, not assignment
 enumeration. Tests independently enumerate all assignments for small policies.
 
-Method and path identify an operation; `operationId` is only a label. Path
-renames appear as removal and addition. New anonymous operations are review
-notices, with no regression exit code by themselves.
+HTTP method and path-template structure identify an operation; `operationId`
+is only a label. Renaming a path parameter preserves the match. Changing a
+literal segment appears as removal and addition. New anonymous operations are
+review notices, with no regression exit code by themselves.
+
+## Path-template identity
+
+OpenAPI treats templates at the same hierarchy with different parameter names
+as [the same path](https://spec.openapis.org/oas/v3.1.1.html#path-templating-matching).
+The shared `@openapi.path_identity(path)` helper replaces each nonempty `{name}`
+with `{}`. Thus `/orders/{id}` and `/orders/{order_id}` have the same identity.
+The comparison and paired scheme resolver use this identity with the exact
+HTTP method. A parameter rename cannot turn an authentication change into an
+unrelated addition and removal.
+
+Literal text, case, slash positions, trailing slashes, and percent encodings
+remain unchanged. Static paths and templated paths are distinct; the analyzer
+does not guess between partially overlapping routes such as `/{entity}/me`
+and `/books/{id}`. Templates embedded in literal segments are handled without
+discarding those literals. Parameter declarations, schema constraints, and
+framework-specific route syntax are not used to infer additional matches.
+
+Paths must start with `/`. Empty parameters, nested or unbalanced braces, and
+parameters crossing `/` are invalid and produce `auth.path`. The parser
+detects multiple raw paths with the same template identity before resolving
+their Path Items, reports `path-duplicate` at each original path, and skips
+those paths. This applies even when the paths declare different HTTP methods
+or one is empty. Unrelated paths retain their analysis results.
+
+Pure `diff.compare` also checks documents constructed by library callers.
+Repeated method/path declarations produce `operation-duplicate`; different raw
+paths with one template identity produce `path-duplicate`. Affected groups are
+incomparable and contribute no witness. Diagnostics make the result incomplete
+with exit code 2, while independent verified regressions remain in the report.
+
+`OperationChange.before_path` and `after_path` retain the original spellings,
+with `None` on a genuinely absent side. The existing `path` remains the candidate
+path when present, otherwise the removed baseline path. JSON reports and SARIF
+result properties include `before_path` and `after_path` as strings or `null`;
+these additive fields retain JSON `schema_version: 1`. Text and SARIF messages
+show both paths when their spellings differ. Locations retain the actual source
+URI and JSON Pointer of the relevant declaration.
+Library callers constructing an `OperationChange` directly must supply both
+path fields; an absent side uses `None`.
 
 ## Scheme identity and completeness
 
@@ -61,7 +102,7 @@ unsupported authentication as a successful check.
 ## Paired input resolution
 
 `parse_pair` accepts two `SourceDocument` inputs and returns a `DocumentPair`.
-It prepares both inputs independently, matches exact method/path pairs whose
+It prepares both inputs independently, matches method/path-template pairs whose
 own authentication policies are valid, and takes each pair's used scheme-name
 union. A side lacking an identity resolves its own declaration with its own
 operation's effective servers. A scheme fingerprint is never borrowed from

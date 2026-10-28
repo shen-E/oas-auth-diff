@@ -1,0 +1,29 @@
+openapi: 3.1.1
+info:
+  title: Project deployments
+  version: 1.0.0
+components:
+  securitySchemes:
+    Session:
+      type: http
+      scheme: bearer
+security:
+  - Session: []
+paths:
+  /projects/{projectId}/deployments/{deploymentId}:
+    get:
+      operationId: getDeployment
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deployment details

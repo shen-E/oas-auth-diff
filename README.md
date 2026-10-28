@@ -65,7 +65,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.5.0 package is prepared for release; it has not been uploaded to
+The v0.6.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -73,10 +73,10 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.5.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.6.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.5.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.5.0`.
+`shen-E/oas-auth-diff@0.6.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.6.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
@@ -92,11 +92,12 @@ controlled file loading; `before_document_url` and `after_document_url` set
 deployment context. Fatal `PairError.Before` and `PairError.After` distinguish
 which input failed. Pass the returned documents to the same pure `compare`.
 
-The CLI uses paired parsing. For each common method/path, it resolves the
-scheme names used on either side, including a removed requirement's still
-declared external definition. Thus removing one factor can produce a verified
-regression instead of an unknown identity. Each side keeps its own loader,
-cache, and resource limits. Unrelated unused external definitions are not read.
+The CLI uses paired parsing. For each common method and path-template structure,
+it resolves the scheme names used on either side, including a removed
+requirement's still declared external definition. Thus removing one factor can
+produce a verified regression instead of an unknown identity. Each side keeps
+its own loader, cache, and resource limits. Unrelated unused external
+definitions are not read.
 
 For split specifications, use `parse_with_loader(text, format=Json,
 source=entry_uri, load=loader)`. The loader receives the referring document's
@@ -131,8 +132,15 @@ generation without OpenAPI or filesystem dependencies.
 - Equivalent, strengthened, weakened, and mixed changes. Mixed changes fail the
   gate when they admit a new access condition.
 
-Operations match by exact HTTP method and path. Additions and removals are listed
-separately; added anonymous operations receive a nonblocking review notice.
+Operations match by exact HTTP method and path-template structure. Renaming
+`/orders/{id}` to `/orders/{order_id}` keeps the operation in the comparison;
+changing a literal path segment still appears as removal and addition.
+`OperationChange.before_path` and `after_path` retain both spellings; the
+existing `path` field names the candidate path, or the removed baseline path.
+JSON and SARIF properties include both optional fields. Duplicate template
+structures within one input are errors, even with different HTTP methods.
+Additions and removals are listed separately; added anonymous operations receive
+a nonblocking review notice. See the [parameter-renaming example](cases/README.md).
 Scheme renames or changed authentication configuration make the affected
 comparison incomplete. Description and presentation hints do not affect it.
 Endpoint identities are resolved for each operation, so sharing a component
