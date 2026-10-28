@@ -271,3 +271,9 @@ scheme. YAML directives must select version 1.2.
 Locations carry the source URI and an RFC 6901 JSON Pointer. Syntax errors retain
 available parser line and column information in diagnostics. Reports do not
 fabricate line numbers for resolved nodes.
+
+SARIF can render checkout-relative file locations and stable operation
+fingerprints using a separate source-root configuration. Entry identities are
+retained in `Comparison.before_source` / `after_source` and the reports'
+`document_sources` object. These report features do not change policy extraction,
+reference loading, or comparison results. See [SARIF in CI](sarif.md).

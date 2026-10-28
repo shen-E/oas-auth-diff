@@ -1,6 +1,8 @@
 import {
   "shen-E/oas-auth-diff/logic",
   "shen-E/oas-auth-diff/openapi",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/x/crypto",
 }
 
 import {

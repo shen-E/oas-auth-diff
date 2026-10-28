@@ -186,7 +186,7 @@ test "renamed reports expose both raw paths without changing candidate evidence"
       "runs": Array(
         [
           {
-            "tool": { "driver": { "version": String("0.6.0"), .. }, .. },
+            "tool": { "driver": { "version": String("0.7.0"), .. }, .. },
             "results": Array(
               [
                 {

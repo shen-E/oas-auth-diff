@@ -16,13 +16,14 @@ priv struct Options {
   format : String
   local_refs : Bool
   ref_root : String?
+  source_root : String?
   before_document_url : String?
   after_document_url : String?
 }
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.6.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
+  "oas-auth-diff 0.7.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL] [--source-root DIR]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\n--source-root DIR makes SARIF artifact paths relative to the source root; requires --format sarif.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
 }
 
 ///|
@@ -32,6 +33,7 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       let mut format = "text"
       let mut local_refs = false
       let mut ref_root = None
+      let mut source_root = None
       let mut before_document_url = None
       let mut after_document_url = None
       let mut seen_format = false
@@ -61,6 +63,14 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
             local_refs = true
             index += 2
           }
+          "--source-root" if source_root is None && index + 1 < rest.length() => {
+            let value = rest[index + 1]
+            if value.is_empty() || value.has_prefix("--") {
+              raise CliError("--source-root requires a directory")
+            }
+            source_root = Some(value)
+            index += 2
+          }
           "--before-document-url" if before_document_url is None &&
             index + 1 < rest.length() => {
             let value = rest[index + 1]
@@ -88,12 +98,16 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       if before.has_prefix("--") || after.has_prefix("--") {
         raise CliError("compare requires two input file paths")
       }
+      if source_root is Some(_) && format != "sarif" {
+        raise CliError("--source-root requires --format sarif")
+      }
       {
         before,
         after,
         format,
         local_refs,
         ref_root,
+        source_root,
         before_document_url,
         after_document_url,
       }
@@ -204,11 +218,30 @@ fn local_loader(
 }
 
 ///|
-fn write_report(comparison : @diff.Comparison, format : String) -> Unit {
+fn sarif_source_root(
+  path : String?,
+  local_refs : Bool,
+) -> @diff.SarifSourceRoot? raise {
+  match path {
+    None => None
+    Some(path) => {
+      let canonical = canonical_root(path)
+      let uri = file_uri(if local_refs { canonical } else { path })
+      Some(@diff.SarifSourceRoot::new(uri))
+    }
+  }
+}
+
+///|
+fn write_report(
+  comparison : @diff.Comparison,
+  format : String,
+  source_root~ : @diff.SarifSourceRoot? = None,
+) -> Unit {
   println(
     match format {
       "json" => @diff.render_json(comparison)
-      "sarif" => @diff.render_sarif(comparison)
+      "sarif" => @diff.render_sarif(comparison, source_root~)
       _ => @diff.render_text(comparison)
     },
   )
@@ -240,7 +273,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.6.0")
+      println("oas-auth-diff 0.7.0")
       return 0
     }
     _ => ()
@@ -251,6 +284,14 @@ fn run(args : Array[String]) -> Int32 {
         Show::to_string(error),
         "oas-auth-diff:arguments",
         selected_format(args),
+      )
+  }
+  let source_root = sarif_source_root(options.source_root, options.local_refs) catch {
+    error =>
+      return failed(
+        error.to_string(),
+        "oas-auth-diff:arguments",
+        options.format,
       )
   }
   let before = read_source(options.before, options.local_refs) catch {
@@ -289,7 +330,7 @@ fn run(args : Array[String]) -> Int32 {
       return failed(error.to_string(), after.source, options.format)
   }
   let comparison = @diff.compare(pair.before, pair.after)
-  write_report(comparison, options.format)
+  write_report(comparison, options.format, source_root~)
   comparison.exit_code()
 }
 

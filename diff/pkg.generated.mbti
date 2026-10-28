@@ -14,11 +14,18 @@ pub fn failure_report(Array[@openapi.Diagnostic]) -> Comparison
 
 pub fn render_json(Comparison) -> String
 
-pub fn render_sarif(Comparison) -> String
+pub fn render_sarif(Comparison, source_root? : SarifSourceRoot?) -> String
 
 pub fn render_text(Comparison) -> String
 
 // Errors
+pub(all) suberror SarifError {
+  InvalidSourceRoot(String)
+} derive(@debug.Debug)
+pub fn SarifError::output(Self, &Logger) -> Unit
+pub fn SarifError::to_repr(Self) -> @debug.Repr
+pub fn SarifError::to_string(Self) -> String
+pub impl Show for SarifError
 
 // Types and methods
 pub(all) enum ChangeKind {
@@ -38,6 +45,8 @@ pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
   complete : Bool
+  before_source : String?
+  after_source : String?
   before_document_url : String?
   after_document_url : String?
 } derive(@debug.Debug)
@@ -57,6 +66,12 @@ pub(all) struct OperationChange {
   location : @openapi.Location
 } derive(@debug.Debug)
 pub fn OperationChange::to_repr(Self) -> @debug.Repr
+
+pub struct SarifSourceRoot {
+  // private fields
+}
+pub fn SarifSourceRoot::new(String) -> Self raise SarifError
+pub fn SarifSourceRoot::uri(Self) -> String
 
 // Type aliases
 

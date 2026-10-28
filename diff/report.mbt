@@ -101,6 +101,20 @@ fn document_urls(comparison : Comparison) -> Json {
 }
 
 ///|
+fn document_sources(comparison : Comparison) -> Json {
+  {
+    "before": match comparison.before_source {
+      Some(source) => Json(source)
+      None => Json::null()
+    },
+    "after": match comparison.after_source {
+      Some(source) => Json(source)
+      None => Json::null()
+    },
+  }
+}
+
+///|
 /// Render a stable, versioned JSON report, including incomplete results.
 pub fn render_json(comparison : Comparison) -> String {
   let report : Json = {
@@ -108,6 +122,7 @@ pub fn render_json(comparison : Comparison) -> String {
     "complete": comparison.complete,
     "exit_code": comparison.exit_code(),
     "document_urls": document_urls(comparison),
+    "document_sources": document_sources(comparison),
     "changes": Json(comparison.changes.map(change_json)),
     "diagnostics": Json(comparison.diagnostics.map(diagnostic_json)),
   }
@@ -174,11 +189,22 @@ pub fn render_text(comparison : Comparison) -> String {
 }
 
 ///|
-fn sarif_location(location : @openapi.Location) -> Json {
+fn sarif_location(
+  location : @openapi.Location,
+  source_root : SarifSourceRoot?,
+) -> Json {
   let valid_uri = sarif_uri(location.uri)
   if valid_uri {
+    let artifact : Json = match source_root {
+      Some(root) =>
+        match sarif_relative_uri(location.uri, root) {
+          Some(uri) => { "uri": uri, "uriBaseId": "%SRCROOT%" }
+          None => { "uri": location.uri }
+        }
+      None => { "uri": location.uri }
+    }
     {
-      "physicalLocation": { "artifactLocation": { "uri": location.uri } },
+      "physicalLocation": { "artifactLocation": artifact },
       "properties": { "source": location.uri, "jsonPointer": location.pointer },
     }
   } else {
@@ -278,8 +304,50 @@ fn uri_char(char : Char) -> Bool {
 }
 
 ///|
+fn route_fingerprint(
+  comparison : Comparison,
+  change : OperationChange,
+  rule : String,
+  source_root : SarifSourceRoot?,
+) -> String? {
+  let source = match comparison.after_source {
+    Some(source) =>
+      match sarif_file_identity(source) {
+        Some(source) => source
+        None => return None
+      }
+    _ => return None
+  }
+  let shape = match @openapi.path_identity(change.path) {
+    Some(shape) => shape
+    None => return None
+  }
+  let entry_identity = match source_root {
+    Some(root) =>
+      match sarif_relative_uri(source, root) {
+        Some(relative) => "relative:" + relative
+        None => "absolute:" + source
+      }
+    None => "absolute:" + source
+  }
+  let input : Json = [
+    "oas-auth-diff/route/v1",
+    rule,
+    entry_identity,
+    change.http_method,
+    shape,
+  ]
+  Some(
+    @crypto.bytes_to_hex_string(@crypto.sha256(@utf8.encode(input.stringify()))),
+  )
+}
+
+///|
 /// SARIF stores JSON Pointers without inventing source line numbers.
-pub fn render_sarif(comparison : Comparison) -> String {
+pub fn render_sarif(
+  comparison : Comparison,
+  source_root~ : SarifSourceRoot? = None,
+) -> String {
   let results : Array[Json] = []
   for change in comparison.changes {
     let regression = change.kind == Weakened || change.kind == Mixed
@@ -290,21 +358,26 @@ pub fn render_sarif(comparison : Comparison) -> String {
       } else {
         "\{change.http_method} \{change.path}: added anonymous operation; review access requirements"
       }
-      results.push({
-        "ruleId": if regression {
-          "auth-regression"
-        } else {
-          "added-anonymous"
-        },
+      let rule = if regression { "auth-regression" } else { "added-anonymous" }
+      let result : Map[String, Json] = {
+        "ruleId": Json(rule),
         "level": if regression {
           "error"
         } else {
           "note"
         },
         "message": { "text": message },
-        "locations": [sarif_location(change.location)],
+        "locations": [sarif_location(change.location, source_root)],
         "properties": change_json(change),
-      })
+      }
+      if route_fingerprint(comparison, change, rule, source_root)
+        is Some(fingerprint) {
+        result["partialFingerprints"] = {
+          "oasAuthDiff/route/v1": fingerprint,
+          "primaryLocationLineHash": fingerprint,
+        }
+      }
+      results.push(Json::object(result))
     }
   }
   let notifications : Array[Json] = comparison.diagnostics.map(fn(diagnostic) {
@@ -312,51 +385,56 @@ pub fn render_sarif(comparison : Comparison) -> String {
       "descriptor": { "id": diagnostic.code },
       "level": "error",
       "message": { "text": diagnostic.message },
-      "locations": [sarif_location(diagnostic.location)],
+      "locations": [sarif_location(diagnostic.location, source_root)],
     }
   })
+  let invocation : Map[String, Json] = {
+    "executionSuccessful": Json(comparison.complete),
+    "exitCode": Json(comparison.exit_code()),
+    "toolExecutionNotifications": Json(notifications),
+  }
+  if source_root is Some(root) {
+    invocation["workingDirectory"] = { "uri": root.uri() }
+  }
+  let run : Map[String, Json] = {
+    "tool": {
+      "driver": {
+        "name": "oas-auth-diff",
+        "version": "0.7.0",
+        "informationUri": "https://github.com/shen-E/oas-auth-diff",
+        "rules": [
+          {
+            "id": "auth-regression",
+            "shortDescription": {
+              "text": "Authentication requirements admit new access conditions",
+            },
+          },
+          {
+            "id": "added-anonymous",
+            "shortDescription": {
+              "text": "New anonymous operation requires review",
+            },
+          },
+        ],
+      },
+    },
+    "results": Json(results),
+    "invocations": Json([Json::object(invocation)]),
+    "properties": {
+      "schema_version": 1,
+      "complete": comparison.complete,
+      "document_urls": document_urls(comparison),
+      "document_sources": document_sources(comparison),
+      "changes": Json(comparison.changes.map(change_json)),
+    },
+  }
+  if source_root is Some(root) {
+    run["originalUriBaseIds"] = { "%SRCROOT%": { "uri": root.uri() } }
+  }
   let report : Json = {
     "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
     "version": "2.1.0",
-    "runs": [
-      {
-        "tool": {
-          "driver": {
-            "name": "oas-auth-diff",
-            "version": "0.6.0",
-            "informationUri": "https://github.com/shen-E/oas-auth-diff",
-            "rules": [
-              {
-                "id": "auth-regression",
-                "shortDescription": {
-                  "text": "Authentication requirements admit new access conditions",
-                },
-              },
-              {
-                "id": "added-anonymous",
-                "shortDescription": {
-                  "text": "New anonymous operation requires review",
-                },
-              },
-            ],
-          },
-        },
-        "results": Json(results),
-        "invocations": [
-          {
-            "executionSuccessful": comparison.complete,
-            "exitCode": comparison.exit_code(),
-            "toolExecutionNotifications": Json(notifications),
-          },
-        ],
-        "properties": {
-          "schema_version": 1,
-          "complete": comparison.complete,
-          "document_urls": document_urls(comparison),
-          "changes": Json(comparison.changes.map(change_json)),
-        },
-      },
-    ],
+    "runs": Json([Json::object(run)]),
   }
   report.stringify(indent=2)
 }
