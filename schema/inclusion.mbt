@@ -1,0 +1,232 @@
+///|
+fn implies(a : Model, b : Model, budget : Budget) -> Bool raise SchemaError {
+  consume(budget)
+  match (a, b) {
+    (_, Any) | (Never, _) => true
+    (Rule(a), _) if a.values is Some(values) => {
+      for value in values {
+        if accepts_model(Rule(a), value, budget) &&
+          !accepts_model(b, value, budget) {
+          return false
+        }
+      }
+      true
+    }
+    (Rule(a), Rule(b)) => {
+      if a.types.any(t => !b.types.contains(t)) || b.values is Some(_) {
+        return false
+      }
+      if a.types.contains("object") {
+        if b.required.any(k => !a.required.contains(k)) {
+          return false
+        }
+        for (key, child) in b.properties {
+          if !implies(
+              a.properties.get(key).unwrap_or(a.additional),
+              child,
+              budget,
+            ) {
+            return false
+          }
+        }
+        for (key, child) in a.properties {
+          if !b.properties.contains(key) &&
+            !implies(child, b.additional, budget) {
+            return false
+          }
+        }
+        if !implies(a.additional, b.additional, budget) {
+          return false
+        }
+      }
+      !a.types.contains("array") || implies(a.items, b.items, budget)
+    }
+    _ => false
+  }
+}
+
+///|
+fn sample(model : Model, budget : Budget) -> Json? raise SchemaError {
+  consume(budget)
+  match model {
+    Any => Some(Json::null())
+    Never => None
+    Rule(rule) => {
+      if rule.values is Some(values) {
+        for value in values {
+          if accepts_model(model, value, budget) {
+            return Some(value)
+          }
+        }
+        return None
+      }
+      for kind in rule.types {
+        let value = match kind {
+          "object" => {
+            let fields = Map([])
+            let mut valid = true
+            for key in rule.required {
+              match
+                sample(
+                  rule.properties.get(key).unwrap_or(rule.additional),
+                  budget,
+                ) {
+                Some(value) => fields[key] = value
+                None => valid = false
+              }
+            }
+            if !valid {
+              continue
+            }
+            Json::object(fields)
+          }
+          "array" => Json::array([])
+          "integer" => Json::number(0)
+          "number" => Json::number(0.5)
+          "string" => Json::string("")
+          "boolean" => Json::boolean(false)
+          _ => Json::null()
+        }
+        return Some(value)
+      }
+      None
+    }
+  }
+}
+
+///|
+fn constraints(model : Model) -> Constraints {
+  match model {
+    Rule(rule) => rule
+    Any =>
+      {
+        types: kinds,
+        values: None,
+        properties: Map([]),
+        required: [],
+        additional: Any,
+        items: Any,
+      }
+    Never =>
+      {
+        types: [],
+        values: None,
+        properties: Map([]),
+        required: [],
+        additional: Never,
+        items: Never,
+      }
+  }
+}
+
+///|
+fn counterexample(
+  a : Model,
+  b : Model,
+  budget : Budget,
+) -> Json? raise SchemaError {
+  consume(budget)
+  if implies(a, b, budget) {
+    return None
+  }
+  let candidates = []
+  if sample(a, budget) is Some(value) {
+    candidates.push(value)
+  }
+  let left = constraints(a)
+  let right = constraints(b)
+  if left.values is Some(values) {
+    candidates.append(values)
+  }
+  candidates.append([
+    Json::null(),
+    Json::boolean(false),
+    Json::boolean(true),
+    Json::number(0),
+    Json::number(0.5),
+    Json::string(""),
+    Json::array([]),
+    Json::object(Map([])),
+  ])
+  // A finite target enum can never cover all strings or all integers.
+  let attempts = match right.values {
+    Some(values) => values.length() + 1
+    None => 1
+  }
+  for index in 0..<(if attempts < 1024 { attempts } else { 1024 }) {
+    candidates.push(Json::string("witness" + index.to_string()))
+    candidates.push(Json::number(index.to_double()))
+  }
+  for value in candidates {
+    if accepts_model(a, value, budget) && !accepts_model(b, value, budget) {
+      return Some(value)
+    }
+  }
+  candidates.clear()
+  if left.types.contains("object") {
+    let object_model = Rule({ ..left, types: ["object"], })
+    if sample(object_model, budget) is Some(Object(base)) {
+      let keys = left.properties.keys().collect()
+      for key in right.properties.keys() {
+        if !keys.contains(key) {
+          keys.push(key)
+        }
+      }
+      for key in right.required {
+        if !keys.contains(key) {
+          keys.push(key)
+        }
+      }
+      let mut extra = "additional"
+      while keys.contains(extra) {
+        extra += "_"
+      }
+      keys.push(extra)
+      for key in keys {
+        let child = counterexample(
+          left.properties.get(key).unwrap_or(left.additional),
+          right.properties.get(key).unwrap_or(right.additional),
+          budget,
+        )
+        if child is Some(value) {
+          let fields = base.copy()
+          fields[key] = value
+          candidates.push(Json::object(fields))
+        }
+      }
+    }
+  }
+  if left.types.contains("array") && !(left.items is Any && right.items is Any) {
+    if counterexample(left.items, right.items, budget) is Some(value) {
+      candidates.push(Json::array([value]))
+    }
+  }
+  for value in candidates {
+    if accepts_model(a, value, budget) && !accepts_model(b, value, budget) {
+      return Some(value)
+    }
+  }
+  None
+}
+
+///|
+/// Decide whether every source instance is also a target instance.
+/// Proof failure without a validated counterexample returns Unknown.
+pub fn subset(source : Schema, target : Schema) -> Inclusion {
+  try {
+    let budget = { remaining: 20000, }
+    if implies(source.model, target.model, budget) {
+      return Included
+    }
+    match counterexample(source.model, target.model, budget) {
+      Some(value) if source.accepts(value) && !target.accepts(value) =>
+        Excluded(copy_value(value))
+      _ =>
+        Unknown(
+          "No inclusion proof or validated counterexample within the supported Schema fragment",
+        )
+    }
+  } catch {
+    SchemaError(message) => Unknown(message)
+  }
+}
