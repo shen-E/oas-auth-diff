@@ -10,6 +10,8 @@ import tempfile
 
 from reference import REFERENCE_COMMIT, REFERENCE_OPTIONS, REFERENCE_VERSION, execute, yaml_text
 
+SCHEMA_OPTIONS = [*REFERENCE_OPTIONS, "--flatten-allof"]
+
 
 def document(schema, direction, version):
     media = {"application/json": {"schema": schema}}
@@ -41,6 +43,11 @@ def cases():
             ("array-items-narrowed", {"type": "array", "items": wide}, {"type": "array", "items": narrow}, 1, 0),
             ("enum-reordered", wide, {"type": "string", "enum": ["write", "read"]}, 0, 0),
             ("description-edited", {"type": "string"}, {"type": "string", "description": "Updated"}, 0, 0),
+            ("allof-required", {"allOf": [optional]}, {"allOf": [optional, {"required": ["id"]}]}, 1, 0),
+            ("allof-required-reverse", {"allOf": [optional, {"required": ["id"]}]}, {"allOf": [optional]}, 0, 1),
+            ("anyof-branch-removed", {"anyOf": [{"type": "string"}, {"type": "integer"}]}, {"anyOf": [{"type": "string"}]}, 1, 0),
+            ("oneof-branch-removed", {"oneOf": [{"type": "string"}, {"type": "integer"}]}, {"oneOf": [{"type": "string"}]}, 1, 0),
+            ("oneof-reordered", {"oneOf": [{"type": "string"}, {"type": "integer"}]}, {"oneOf": [{"type": "integer"}, {"type": "string"}]}, 0, 0),
         ]
         for direction in ("request", "response"):
             for label, before, after, request_exit, response_exit in changes:
@@ -76,7 +83,7 @@ def main():
             before.write_text(yaml_text(baseline) if before_format == "yaml" else json.dumps(baseline), encoding="utf-8")
             after.write_text(yaml_text(candidate) if after_format == "yaml" else json.dumps(candidate), encoding="utf-8")
             ours_exit, ours_report = execute(ours, ["breaking", str(before), str(after), "--format", "json"])
-            reference_exit, reference_report = execute(reference, ["breaking", str(before), str(after), "--format", "json", *REFERENCE_OPTIONS])
+            reference_exit, reference_report = execute(reference, ["breaking", str(before), str(after), "--format", "json", *SCHEMA_OPTIONS])
             ours_operations = sorted({(x["http_method"], x["path"]) for x in ours_report["findings"]})
             reference_operations = sorted({(x["operation"], x["path"]) for x in reference_report if x["level"] == 3})
             findings = ours_report["findings"]
@@ -87,7 +94,7 @@ def main():
                             and all(x["rule_id"] in {"request-schema-narrowed", "response-schema-widened"} for x in findings)})
     differences = [r for r in results if not r["passed"]]
     report = {"reference_version": REFERENCE_VERSION, "reference_commit": REFERENCE_COMMIT,
-              "reference_options": REFERENCE_OPTIONS, "scope": "schema-type-enum-required-items",
+              "reference_options": SCHEMA_OPTIONS, "scope": "schema-type-enum-required-items-composition",
               "semantic_cases": len(scenarios), "total": len(results), "passed": len(results) - len(differences),
               "cases": results, "differences": differences}
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

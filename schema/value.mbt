@@ -102,6 +102,34 @@ fn accepts_model(
   match model {
     Any => true
     Never => false
+    All(children) => {
+      for child in children {
+        if !accepts_model(child, value, budget) {
+          return false
+        }
+      }
+      true
+    }
+    Union(children) => {
+      for child in children {
+        if accepts_model(child, value, budget) {
+          return true
+        }
+      }
+      false
+    }
+    ExactlyOne(children) => {
+      let mut matches = 0
+      for child in children {
+        if accepts_model(child, value, budget) {
+          matches += 1
+          if matches > 1 {
+            return false
+          }
+        }
+      }
+      matches == 1
+    }
     Rule(rule) => {
       if !rule.types.contains(kind(value)) {
         return false

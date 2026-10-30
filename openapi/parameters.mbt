@@ -18,6 +18,7 @@ fn parameter_key(name : String, position : String) -> (String, String) {
 priv struct ParameterBudget {
   mut count : Int32
   mut nodes : Int32
+  legacy : Bool
 }
 
 ///|

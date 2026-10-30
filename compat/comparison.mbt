@@ -45,6 +45,8 @@ pub fn checks() -> Array[String] {
     "endpoint-removed", "request-parameter-added-required", "request-parameter-became-required",
     "request-schema-narrowed", "response-schema-widened", "request-body-added-required",
     "request-body-became-required", "request-body-media-type-removed", "response-media-type-added",
+    "response-success-status-removed", "response-header-required-removed", "response-header-became-optional",
+    "response-header-schema-widened",
   ]
 }
 

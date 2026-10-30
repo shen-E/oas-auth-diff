@@ -10,6 +10,7 @@ fn compare_schema(
   request : Bool,
   findings : Array[Finding],
   diagnostics : Array[@openapi.Diagnostic],
+  rule_id~ : String? = None,
 ) -> Unit {
   let at = match after {
     Some(schema) => schema.location
@@ -42,11 +43,13 @@ fn compare_schema(
     Included => ()
     Excluded(witness) =>
       findings.push({
-        rule_id: if request {
-          "request-schema-narrowed"
-        } else {
-          "response-schema-widened"
-        },
+        rule_id: rule_id.unwrap_or(
+          if request {
+            "request-schema-narrowed"
+          } else {
+            "response-schema-widened"
+          },
+        ),
         http_method: operation.http_method,
         path: operation.path,
         parameter,
@@ -71,6 +74,8 @@ fn payload_finding(
   at : @openapi.Location,
   operation : @openapi.OperationContract,
   findings : Array[Finding],
+  parameter~ : String? = None,
+  position~ : String? = None,
 ) -> Unit {
   findings.push({
     rule_id,
@@ -78,8 +83,8 @@ fn payload_finding(
     location: at,
     http_method: operation.http_method,
     path: operation.path,
-    parameter: None,
-    position: None,
+    parameter,
+    position,
     witness: None,
   })
 }
@@ -210,51 +215,5 @@ fn compare_payloads(
       unsupported(diagnostics, "Removed request body contract", after.location)
     _ => ()
   }
-  let old = Map([])
-  let next = Map([])
-  for response in before.responses {
-    old[response.status] = response
-  }
-  for response in after.responses {
-    next[response.status] = response
-  }
-  for response in before.responses {
-    if !next.contains(response.status) {
-      unsupported(
-        diagnostics,
-        "Removed response status: " + response.status,
-        after.location,
-      )
-    }
-  }
-  for response in after.responses {
-    match old.get(response.status) {
-      None =>
-        unsupported(
-          diagnostics,
-          "Added response status: " + response.status,
-          response.location,
-        )
-      Some(previous) => {
-        if !previous.same_remainder(response) {
-          unsupported(
-            diagnostics,
-            "Changed response headers, links or other unevaluated field",
-            response.location,
-          )
-        }
-        compare_content(
-          previous.content,
-          response.content,
-          before_30,
-          after_30,
-          after,
-          "response:" + response.status,
-          false,
-          findings,
-          diagnostics,
-        )
-      }
-    }
-  }
+  compare_responses(before, after, before_30, after_30, findings, diagnostics)
 }

@@ -1,8 +1,92 @@
 ///|
 fn implies(a : Model, b : Model, budget : Budget) -> Bool raise SchemaError {
   consume(budget)
+  if model_key(a, budget) == model_key(b, budget) {
+    return true
+  }
+  if finite_values(a, budget) is Some(values) {
+    for value in values {
+      if !accepts_model(b, value, budget) {
+        return false
+      }
+    }
+    return true
+  }
   match (a, b) {
     (_, Any) | (Never, _) => true
+    (Union(children), _) | (ExactlyOne(children), _) => {
+      for child in children {
+        if !implies(child, b, budget) {
+          return false
+        }
+      }
+      true
+    }
+    (_, All(children)) => {
+      for child in children {
+        if !implies(a, child, budget) {
+          return false
+        }
+      }
+      true
+    }
+    (All(children), _) => {
+      for child in children {
+        if implies(child, b, budget) {
+          return true
+        }
+      }
+      false
+    }
+    (_, Union(children)) => {
+      if a is Rule(rule) && rule.types.length() > 1 {
+        let mut covered = true
+        for kind in rule.types {
+          if !implies(Rule({ ..rule, types: [kind], }), b, budget) {
+            covered = false
+            break
+          }
+        }
+        if covered {
+          return true
+        }
+      }
+      for child in children {
+        if implies(a, child, budget) {
+          return true
+        }
+      }
+      false
+    }
+    (_, ExactlyOne(children)) => {
+      if a is Rule(rule) && rule.types.length() > 1 {
+        let mut covered = true
+        for kind in rule.types {
+          if !implies(Rule({ ..rule, types: [kind], }), b, budget) {
+            covered = false
+            break
+          }
+        }
+        if covered {
+          return true
+        }
+      }
+      for index, child in children {
+        if implies(a, child, budget) {
+          let mut exclusive = true
+          for other_index, other in children {
+            if index != other_index && !disjoint(a, other, budget) {
+              exclusive = false
+              break
+            }
+          }
+          if exclusive {
+            return true
+          }
+        }
+      }
+      false
+    }
     (Rule(a), _) if a.values is Some(values) => {
       for value in values {
         if accepts_model(Rule(a), value, budget) &&
@@ -51,6 +135,18 @@ fn sample(model : Model, budget : Budget) -> Json? raise SchemaError {
   match model {
     Any => Some(Json::null())
     Never => None
+    All(children) | Union(children) | ExactlyOne(children) => {
+      if finite_values(model, budget) is Some(values) {
+        return values.get(0)
+      }
+      for child in children {
+        if sample(child, budget) is Some(value) &&
+          accepts_model(model, value, budget) {
+          return Some(value)
+        }
+      }
+      None
+    }
     Rule(rule) => {
       if rule.values is Some(values) {
         for value in values {
@@ -98,7 +194,7 @@ fn sample(model : Model, budget : Budget) -> Json? raise SchemaError {
 fn constraints(model : Model) -> Constraints {
   match model {
     Rule(rule) => rule
-    Any =>
+    Any | All(_) | Union(_) | ExactlyOne(_) =>
       {
         types: kinds,
         values: None,
@@ -130,6 +226,27 @@ fn counterexample(
     return None
   }
   let candidates = []
+  if finite_values(a, budget) is Some(values) {
+    candidates.append(values)
+  }
+  match a {
+    All(children) | Union(children) | ExactlyOne(children) =>
+      for child in children {
+        if counterexample(child, b, budget) is Some(value) {
+          candidates.push(value)
+        }
+      }
+    _ => ()
+  }
+  match b {
+    All(children) | Union(children) | ExactlyOne(children) =>
+      for child in children {
+        if counterexample(a, child, budget) is Some(value) {
+          candidates.push(value)
+        }
+      }
+    _ => ()
+  }
   if sample(a, budget) is Some(value) {
     candidates.push(value)
   }

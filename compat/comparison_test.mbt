@@ -39,7 +39,7 @@ test "unclassified changes retain confirmed findings and return incomplete" {
   )
   let after = spec(
     "[{\"name\":\"tenant\",\"in\":\"query\",\"required\":true}]",
-    extra=",\"responses\":{\"201\":{\"description\":\"created\"}}",
+    extra=",\"responses\":{\"200\":{\"description\":\"ok\",\"links\":{\"next\":{\"operationId\":\"nextPage\"}}}}",
   )
   let comparison = @compat.compare(before, after)
   assert_eq(comparison.exit_code(), 2)

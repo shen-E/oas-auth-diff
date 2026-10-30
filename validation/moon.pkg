@@ -1,0 +1,5 @@
+import {
+  "shen-E/oas-auth-diff/openapi",
+  "moonbitstack/moonschema" @metaschema,
+  "moonbitlang/core/json",
+}

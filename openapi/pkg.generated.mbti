@@ -73,6 +73,16 @@ pub(all) struct DocumentPair {
 } derive(@debug.Debug)
 pub fn DocumentPair::to_repr(Self) -> @debug.Repr
 
+pub struct HeaderContract {
+  name : String
+  required : Bool
+  schema : SchemaContract?
+  content : Array[MediaContract]
+  location : Location
+  // private fields
+}
+pub fn HeaderContract::same_remainder(Self, Self) -> Bool
+
 pub(all) enum InputFormat {
   Json
   Yaml
@@ -136,6 +146,7 @@ pub fn ParameterContract::same_shape(Self, Self) -> Bool
 pub struct ResponseContract {
   status : String
   content : Array[MediaContract]
+  headers : Array[HeaderContract]
   location : Location
   // private fields
 }
@@ -162,6 +173,7 @@ pub struct Snapshot {
   // private fields
 }
 pub fn Snapshot::changes(Self, Self) -> Array[ValueChange]
+pub fn Snapshot::to_json(Self) -> Json
 
 pub(all) struct SourceDocument {
   text : String

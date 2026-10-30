@@ -30,7 +30,8 @@ fn Graph::schema_value(
   }
   if fields.get("$ref") is Some(reference) {
     for key in fields.keys() {
-      if !["$ref", "summary", "description", "title"].contains(key) &&
+      if budget.legacy &&
+        !["$ref", "summary", "description", "title"].contains(key) &&
         !key.has_prefix("x-") {
         issue(
           "ref.sibling",
@@ -51,14 +52,19 @@ fn Graph::schema_value(
     }
     let nested = seen.copy()
     nested[key] = true
-    return self.schema_value(target, origin, budget, nested, depth + 1)
+    let resolved = self.schema_value(target, origin, budget, nested, depth + 1)
+    if !budget.legacy && fields.length() > 1 {
+      let siblings = without(fields, ["$ref"])
+      let sibling = self.schema_value(siblings, at, budget, seen, depth + 1).0
+      // A 3.1 Schema $ref is an applicator; its siblings also constrain values.
+      return (Obj(Map([("allOf", Seq([resolved.0, sibling]))])), at)
+    }
+    return resolved
   }
   let result = fields.copy()
   for (key, child) in fields {
     let location = at.key(key)
-    if [
-        "properties", "$defs", "definitions", "dependentSchemas", "patternProperties",
-      ].contains(key) {
+    if ["properties", "dependentSchemas", "patternProperties"].contains(key) {
       let entries = object(child, location)
       let mapped = Map([])
       for (name, schema) in entries {
@@ -256,7 +262,13 @@ fn response_contracts(
       location.key("content"),
       budget,
     )
-    let remainder = without(response, ["content", "description"])
+    let headers = response_headers(
+      graph,
+      response.get("headers"),
+      location.key("headers"),
+      budget,
+    )
+    let remainder = without(response, ["content", "description", "headers"])
     charge_contract(remainder, location, budget)
     if unevaluated_ref(remainder) {
       issue(
@@ -264,7 +276,13 @@ fn response_contracts(
         location,
       )
     }
-    result.push({ status, content, location, remainder: canonical(remainder), })
+    result.push({
+      status,
+      content,
+      headers,
+      location,
+      remainder: canonical(remainder),
+    })
   }
   result
 }

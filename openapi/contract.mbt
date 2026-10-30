@@ -26,7 +26,7 @@ pub fn parse_specification(
   )
   let diagnostics = []
   let operations = []
-  let budget = { count: 0, nodes: 0, }
+  let budget = { count: 0, nodes: 0, legacy: version.has_prefix("3.0."), }
   let location : Location = { uri: source, pointer: "", }
   let paths = try {
     match fields.get("paths") {
@@ -148,7 +148,7 @@ pub fn parse_specification(
     Obj(result) => {
       if result.get("components") is Some(Obj(components)) {
         let retained = without(components, [
-          "parameters", "schemas", "requestBodies", "responses",
+          "parameters", "schemas", "requestBodies", "responses", "headers",
         ])
         match retained {
           Obj(remaining) if remaining.is_empty() =>
