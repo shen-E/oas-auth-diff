@@ -160,25 +160,14 @@ fn prepare_entry(
       )
   }
   let entry_location : Location = { uri: source, pointer: "", }
-  let graph : Graph = {
-    documents: Map([]),
-    requests: Map([]),
-    load,
-    resource_diagnostics: [],
-    explicit_urls: document_url is Some(_),
-    conflicted_origins: Map([]),
-    conflicted_contents: Map([]),
-    origin_children: Map([]),
-    bytes: @utf8.encode(text).length(),
+  let graph = source_graph(
+    { text, format, source, },
+    root,
     nodes,
-    operations: 0,
-    atoms: 0,
-  }
-  graph.documents[source] = {
-    input: { text, format, source, },
-    value: Ok(root),
-    document_url: effective_url,
-  }
+    load,
+    effective_url,
+    explicit_urls=document_url is Some(_),
+  )
   let diagnostics = []
   let declared = try {
     match obj.get("components") {

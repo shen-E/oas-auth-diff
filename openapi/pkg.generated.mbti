@@ -11,6 +11,8 @@ pub fn parse_document(String, format~ : InputFormat, source? : String, document_
 
 pub fn parse_pair(SourceDocument, SourceDocument, before_load? : ((String, String) -> SourceDocument raise DocumentError)?, after_load? : ((String, String) -> SourceDocument raise DocumentError)?, before_document_url? : String?, after_document_url? : String?) -> DocumentPair raise PairError
 
+pub fn parse_specification(String, format~ : InputFormat, source? : String, load? : ((String, String) -> SourceDocument raise DocumentError)?) -> Specification raise DocumentError
+
 pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError, document_url? : String?) -> Document raise DocumentError
 
 pub fn path_identity(String) -> String?
@@ -90,6 +92,26 @@ pub(all) struct Operation {
 } derive(@debug.Debug)
 pub fn Operation::to_repr(Self) -> @debug.Repr
 
+pub struct OperationContract {
+  http_method : String
+  path : String
+  parameters : Array[ParameterContract]
+  location : Location
+  complete : Bool
+  // private fields
+}
+pub fn OperationContract::same_remainder(Self, Self) -> Bool
+
+pub struct ParameterContract {
+  name : String
+  position : String
+  required : Bool
+  definition : Json
+  location : Location
+  // private fields
+}
+pub fn ParameterContract::same_shape(Self, Self) -> Bool
+
 pub(all) struct Scheme {
   name : String
   fingerprint : String
@@ -108,6 +130,16 @@ pub(all) struct SourceDocument {
 pub fn SourceDocument::equal(Self, Self) -> Bool
 pub fn SourceDocument::not_equal(Self, Self) -> Bool
 pub fn SourceDocument::to_repr(Self) -> @debug.Repr
+
+pub struct Specification {
+  source : String
+  version : String
+  operations : Array[OperationContract]
+  diagnostics : Array[Diagnostic]
+  // private fields
+}
+pub fn Specification::same_remainder(Self, Self) -> Bool
+pub fn Specification::to_json(Self) -> Json
 
 // Type aliases
 
