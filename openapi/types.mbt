@@ -169,7 +169,7 @@ pub extend DocumentError with Show::{output}
 priv enum Value {
   Null
   Bool(Bool)
-  Number
+  Number(Json)
   Str(String)
   Seq(Array[Value])
   Obj(Map[String, Value])

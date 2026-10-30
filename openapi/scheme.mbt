@@ -19,7 +19,7 @@ fn canonical(value : Value) -> String {
     Seq(items) => "[" + items.map(canonical).join(",") + "]"
     Null => "null"
     Bool(value) => value.to_string()
-    Number => "0"
+    Number(value) => decimal_key(value.stringify())
   }
 }
 

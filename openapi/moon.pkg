@@ -3,5 +3,6 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/buffer",
+  "moonbitlang/core/bigint",
   "moonbitstack/moonyaml" @yaml,
 }

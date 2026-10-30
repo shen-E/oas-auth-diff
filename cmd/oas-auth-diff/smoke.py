@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.7.0" in invoke(["--version"], 0)
+    assert "0.8.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -757,6 +757,59 @@ def main():
         fatal = invoke(["compare", old, directory / "missing.json", "--source-root", checkout], 2, format="sarif")
         assert not fatal["runs"][0].get("originalUriBaseIds")
         assert fatal["runs"][0]["properties"]["document_sources"] == {"before": None, "after": None}
+
+    check_ids = invoke(["checks", "--format", "json"], 0)
+    assert json.loads(check_ids) == ["endpoint-removed", "request-parameter-added-required", "request-parameter-became-required"]
+    assert "endpoint-removed" in invoke(["checks"], 0)
+    parameter_before = cases / "parameters.before.yaml"
+    parameter_after = cases / "parameters.after.json"
+    invoke(["compare", parameter_before, parameter_after], 0, format="json")
+    for output_format in ("text", "json", "sarif"):
+        invoke(["breaking", parameter_before, parameter_before], 0, format=output_format)
+        result = invoke(["breaking", parameter_before, parameter_after], 1, format=output_format)
+        if output_format == "json":
+            assert result["report_kind"] == "compatibility" and result["complete"]
+            assert result["findings"][0]["parameter"] == "tenant"
+        elif output_format == "sarif":
+            assert result["runs"][0]["results"][0]["ruleId"] == "request-parameter-added-required"
+
+    with tempfile.TemporaryDirectory(prefix="oas-contract-") as directory:
+        directory = Path(directory)
+        old, new = directory / "before.json", directory / "after.json"
+        base = json.loads(parameter_after.read_text(encoding="utf-8"))
+        changed = copy.deepcopy(base)
+        base["paths"]["/orders"]["get"]["parameters"] = []
+        old.write_text(json.dumps(base), encoding="utf-8")
+        for position in ("query", "header", "cookie"):
+            changed["paths"]["/orders"]["get"]["parameters"][0]["in"] = position
+            new.write_text(json.dumps(changed), encoding="utf-8")
+            report = invoke(["breaking", old, new], 1, format="json")
+            assert report["findings"][0]["position"] == position
+        changed["paths"]["/orders"]["get"]["responses"] = {"201": {"description": "Created"}}
+        new.write_text(json.dumps(changed), encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            report = invoke(["breaking", old, new], 2, format=output_format)
+            if output_format == "json":
+                assert not report["complete"] and len(report["findings"]) == 1
+            elif output_format == "sarif":
+                assert not report["runs"][0]["invocations"][0]["executionSuccessful"]
+                assert len(report["runs"][0]["results"]) == 1
+        changed = copy.deepcopy(base)
+        changed["paths"]["/orders"]["get"]["parameters"] = [{"$ref": "parameter.yaml"}]
+        new.write_text(json.dumps(changed), encoding="utf-8")
+        parameter_file = directory / "parameter.yaml"
+        parameter_file.write_text("name: tenant\nin: query\nrequired: true\nschema: {type: string}\n", encoding="utf-8")
+        invoke(["breaking", old, new], 2, format="json")
+        report = invoke(["breaking", old, new, "--local-refs", "--source-root", directory], 1, format="sarif")
+        finding = report["runs"][0]["results"][0]
+        assert finding["locations"][0]["physicalLocation"]["artifactLocation"] == {"uri": "parameter.yaml", "uriBaseId": "%SRCROOT%"}
+        fingerprint_key = ["oas-auth-diff/compatibility/v1", "after.json", "request-parameter-added-required", "GET", "/orders", "query", "tenant"]
+        expected_fingerprint = hashlib.sha256(json.dumps(fingerprint_key, separators=(",", ":")).encode()).hexdigest()
+        assert finding["partialFingerprints"]["compatibility/v1"] == expected_fingerprint
+        parameter_file.write_text("name: tenant\nin: query\nrequired: not-a-boolean\n", encoding="utf-8")
+        invoke(["breaking", old, new, "--local-refs"], 2, format="json")
+        invoke(["breaking", old, directory / "missing.json"], 2, format="json")
+        invoke(["breaking", old, new, "--before-document-url", "https://example.test/spec"], 2, format="json")
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

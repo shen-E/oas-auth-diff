@@ -400,7 +400,7 @@ pub fn render_sarif(
     "tool": {
       "driver": {
         "name": "oas-auth-diff",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "informationUri": "https://github.com/shen-E/oas-auth-diff",
         "rules": [
           {

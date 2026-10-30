@@ -3,6 +3,7 @@ package "shen-E/oas-auth-diff/diff"
 
 import {
   "moonbitlang/core/debug",
+  "shen-E/oas-auth-diff/compat",
   "shen-E/oas-auth-diff/logic",
   "shen-E/oas-auth-diff/openapi",
 }
@@ -11,6 +12,12 @@ import {
 pub fn compare(@openapi.Document, @openapi.Document) -> Comparison
 
 pub fn failure_report(Array[@openapi.Diagnostic]) -> Comparison
+
+pub fn render_compatibility_json(@compat.Comparison) -> String
+
+pub fn render_compatibility_sarif(@compat.Comparison, source_root? : SarifSourceRoot?) -> String
+
+pub fn render_compatibility_text(@compat.Comparison) -> String
 
 pub fn render_json(Comparison) -> String
 

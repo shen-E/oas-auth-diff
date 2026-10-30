@@ -33,7 +33,7 @@ fn from_json(
       if !finite(number) {
         raise DocumentError("Non-finite number at #" + pointer)
       }
-      Number
+      Number(value)
     }
     String(text) => Str(text)
     Array(items) => {
@@ -86,7 +86,7 @@ fn from_yaml(
       if !finite(value) {
         raise DocumentError("Non-finite number at #" + pointer)
       }
-      Number
+      Number(yaml_number(node.text, value))
     }
     Str(value) => Str(value)
     Sequence(items) => {

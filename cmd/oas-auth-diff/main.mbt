@@ -11,6 +11,7 @@ impl Show for CliError with fn output(self, logger) {
 
 ///|
 priv struct Options {
+  command : String
   before : String
   after : String
   format : String
@@ -23,13 +24,26 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.7.0\nUsage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n       [--before-document-url URL] [--after-document-url URL] [--source-root DIR]\n       oas-auth-diff --help | --version\n\nCompare OpenAPI 3.0/3.1 JSON or YAML files.\n--local-refs loads referenced files within each entry's directory.\n--ref-root DIR enables local references within an explicit boundary.\n--before-document-url URL sets the absolute HTTP(S) address of the before specification document.\n--after-document-url URL sets the absolute HTTP(S) address of the after specification document.\n--source-root DIR makes SARIF artifact paths relative to the source root; requires --format sarif.\nDocument URLs resolve relative server URLs; they do not enable local references or fetch URLs.\nExit codes: 0 complete/no regression; 1 verified regression; 2 error/incomplete."
+  "oas-auth-diff 0.8.0\n" +
+  "Usage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
+  "       oas-auth-diff breaking BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
+  "       oas-auth-diff checks [--format json]\n" +
+  "       oas-auth-diff --help | --version\n\n" +
+  "compare checks authorization; breaking checks endpoint removal and required request parameters.\n" +
+  "Other changed contract fields make breaking incomplete; this is not full OpenAPI validation.\n" +
+  "--local-refs loads referenced files within each entry's directory.\n" +
+  "--ref-root DIR enables local references within an explicit boundary.\n" +
+  "--before-document-url URL and --after-document-url URL configure deployment context for compare only.\n" +
+  "--source-root DIR makes SARIF paths relative to a source root; requires --format sarif.\n" +
+  "No network requests are made during analysis.\n" +
+  "Exit codes: 0 complete/no finding in the selected profile; 1 confirmed finding; 2 error/incomplete."
 }
 
 ///|
 fn parse_options(args : Array[String]) -> Options raise CliError {
   match args {
-    [_, "compare", before, after, .. rest] => {
+    [_, command, before, after, .. rest] if command == "compare" ||
+      command == "breaking" => {
       let mut format = "text"
       let mut local_refs = false
       let mut ref_root = None
@@ -96,12 +110,19 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
         }
       }
       if before.has_prefix("--") || after.has_prefix("--") {
-        raise CliError("compare requires two input file paths")
+        raise CliError("comparison requires two input file paths")
       }
       if source_root is Some(_) && format != "sarif" {
         raise CliError("--source-root requires --format sarif")
       }
+      if command == "breaking" &&
+        (before_document_url is Some(_) || after_document_url is Some(_)) {
+        raise CliError(
+          "document URL options apply to compare; breaking does not classify endpoint URLs",
+        )
+      }
       {
+        command,
         before,
         after,
         format,
@@ -113,7 +134,9 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       }
     }
     _ =>
-      raise CliError("expected compare BEFORE AFTER [--format text|json|sarif]")
+      raise CliError(
+        "expected compare or breaking BEFORE AFTER [--format text|json|sarif]",
+      )
   }
 }
 
@@ -253,7 +276,31 @@ fn write_report(
 }
 
 ///|
-fn failed(message : String, source : String, format : String) -> Int32 {
+fn failed(
+  message : String,
+  source : String,
+  format : String,
+  compatibility~ : Bool = false,
+) -> Int32 {
+  if compatibility {
+    write_compatibility_report(
+      {
+        findings: [],
+        complete: false,
+        before_source: source,
+        after_source: source,
+        diagnostics: [
+          {
+            code: "input-error",
+            message,
+            location: { uri: source, pointer: "", },
+          },
+        ],
+      },
+      format,
+    )
+    return 2
+  }
   let comparison = @diff.failure_report([
     @openapi.Diagnostic::{
       code: "input-error",
@@ -273,17 +320,27 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.7.0")
+      println("oas-auth-diff 0.8.0")
+      return 0
+    }
+    [_, "checks"] => {
+      println(@compat.checks().join("\n"))
+      return 0
+    }
+    [_, "checks", "--format", "json"] => {
+      println(Json(@compat.checks()).stringify())
       return 0
     }
     _ => ()
   }
+  let compatibility = args.length() > 1 && args[1] == "breaking"
   let options = parse_options(args) catch {
     error =>
       return failed(
         Show::to_string(error),
         "oas-auth-diff:arguments",
         selected_format(args),
+        compatibility~,
       )
   }
   let source_root = sarif_source_root(options.source_root, options.local_refs) catch {
@@ -292,29 +349,85 @@ fn run(args : Array[String]) -> Int32 {
         error.to_string(),
         "oas-auth-diff:arguments",
         options.format,
+        compatibility~,
       )
   }
   let before = read_source(options.before, options.local_refs) catch {
     error =>
-      return failed(error.to_string(), file_uri(options.before), options.format)
+      return failed(
+        error.to_string(),
+        file_uri(options.before),
+        options.format,
+        compatibility~,
+      )
   }
   let before_load = local_loader(
     options.before,
     options.local_refs,
     options.ref_root,
   ) catch {
-    error => return failed(error.to_string(), before.source, options.format)
+    error =>
+      return failed(
+        error.to_string(),
+        before.source,
+        options.format,
+        compatibility~,
+      )
   }
   let after = read_source(options.after, options.local_refs) catch {
     error =>
-      return failed(error.to_string(), file_uri(options.after), options.format)
+      return failed(
+        error.to_string(),
+        file_uri(options.after),
+        options.format,
+        compatibility~,
+      )
   }
   let after_load = local_loader(
     options.after,
     options.local_refs,
     options.ref_root,
   ) catch {
-    error => return failed(error.to_string(), after.source, options.format)
+    error =>
+      return failed(
+        error.to_string(),
+        after.source,
+        options.format,
+        compatibility~,
+      )
+  }
+  if options.command == "breaking" {
+    let baseline = @openapi.parse_specification(
+      before.text,
+      format=before.format,
+      source=before.source,
+      load=before_load,
+    ) catch {
+      error =>
+        return failed(
+          error.to_string(),
+          before.source,
+          options.format,
+          compatibility~,
+        )
+    }
+    let candidate = @openapi.parse_specification(
+      after.text,
+      format=after.format,
+      source=after.source,
+      load=after_load,
+    ) catch {
+      error =>
+        return failed(
+          error.to_string(),
+          after.source,
+          options.format,
+          compatibility~,
+        )
+    }
+    let result = @compat.compare(baseline, candidate)
+    write_compatibility_report(result, options.format, source_root~)
+    return result.exit_code()
   }
   let pair = @openapi.parse_pair(
     before,

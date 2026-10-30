@@ -1,4 +1,4 @@
-name: Check authorization changes
+name: Check OpenAPI changes
 
 on:
   push:
@@ -60,3 +60,19 @@ jobs:
       - run: moon build cmd/oas-auth-diff --target native
       - name: Exercise the CLI
         run: python cmd/oas-auth-diff/smoke.py
+      - name: Compare parameter rules with oasdiff 1.35.0
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          oracle="$RUNNER_TEMP/oasdiff-1.35.0"
+          mkdir -p "$oracle"
+          curl -fL https://github.com/oasdiff/oasdiff/releases/download/v1.35.0/checksums.txt -o "$oracle/checksums.txt"
+          curl -fL https://github.com/oasdiff/oasdiff/releases/download/v1.35.0/oasdiff_1.35.0_linux_amd64.tar.gz -o "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz"
+          (cd "$oracle" && sha256sum --check --ignore-missing checksums.txt)
+          tar -xzf "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz" -C "$oracle"
+          python compat/reference.py --reference "$oracle/oasdiff" --output _build/compat-reference.json
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: parameter-reference-results
+          path: _build/compat-reference.json
