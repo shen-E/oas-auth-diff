@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.8.0" in invoke(["--version"], 0)
+    assert "0.9.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -759,7 +759,9 @@ def main():
         assert fatal["runs"][0]["properties"]["document_sources"] == {"before": None, "after": None}
 
     check_ids = invoke(["checks", "--format", "json"], 0)
-    assert json.loads(check_ids) == ["endpoint-removed", "request-parameter-added-required", "request-parameter-became-required"]
+    assert json.loads(check_ids) == ["endpoint-removed", "request-parameter-added-required", "request-parameter-became-required",
+                                    "request-schema-narrowed", "response-schema-widened", "request-body-added-required",
+                                    "request-body-became-required", "request-body-media-type-removed", "response-media-type-added"]
     assert "endpoint-removed" in invoke(["checks"], 0)
     parameter_before = cases / "parameters.before.yaml"
     parameter_after = cases / "parameters.after.json"
@@ -810,6 +812,64 @@ def main():
         invoke(["breaking", old, new, "--local-refs"], 2, format="json")
         invoke(["breaking", old, directory / "missing.json"], 2, format="json")
         invoke(["breaking", old, new, "--before-document-url", "https://example.test/spec"], 2, format="json")
+
+    with tempfile.TemporaryDirectory(prefix="oas-payload-") as directory:
+        directory = Path(directory)
+        old, new = directory / "before.json", directory / "after.json"
+
+        def payload(schema, response=False):
+            content = {"application/json": {"schema": schema}}
+            operation = {"responses": {"200": {"description": "Order"}}}
+            if response:
+                operation["responses"]["200"]["content"] = content
+            else:
+                operation["requestBody"] = {"content": content}
+            return {"openapi": "3.1.1", "info": {"title": "Orders", "version": "1.0.0"},
+                    "paths": {"/orders": {"post": operation}}}
+
+        wide, narrow = {"type": "string", "enum": ["read", "write"]}, {"type": "string", "enum": ["read"]}
+        for response in (False, True):
+            baseline = payload(narrow if response else wide, response)
+            candidate = payload(wide if response else narrow, response)
+            old.write_text(json.dumps(baseline), encoding="utf-8")
+            new.write_text(json.dumps(candidate), encoding="utf-8")
+            for output_format in ("text", "json", "sarif"):
+                report = invoke(["breaking", old, new], 1, format=output_format)
+                if output_format == "json":
+                    finding = report["findings"][0]
+                    assert finding["witness"] == "write" and finding["witness_verified"]
+                elif output_format == "sarif":
+                    assert report["runs"][0]["results"][0]["properties"]["witness_verified"]
+            invoke(["breaking", new, old], 0, format="json")
+        candidate = payload({"type": "string", "nullable": True})
+        candidate["openapi"] = "3.0.3"
+        baseline = payload({"type": "string"})
+        baseline["openapi"] = "3.0.3"
+        old.write_text(json.dumps(candidate), encoding="utf-8")
+        new.write_text(json.dumps(baseline), encoding="utf-8")
+        null_witness = invoke(["breaking", old, new], 1, format="json")["findings"][0]
+        assert null_witness["witness"] is None and null_witness["witness_verified"]
+
+        baseline = payload({"type": "string", "minLength": 1})
+        candidate = payload({"type": "string", "minLength": 2})
+        candidate["paths"]["/orders"]["post"]["parameters"] = [{"name": "tenant", "in": "query", "required": True}]
+        old.write_text(json.dumps(baseline), encoding="utf-8")
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        incomplete = invoke(["breaking", old, new], 2, format="json")
+        assert len(incomplete["findings"]) == 1 and any(d["code"] == "compat.schema" for d in incomplete["diagnostics"])
+        # General diff remains useful when a semantic assertion is unsupported.
+        structural = invoke(["diff", old, new], 0, format="json")
+        assert structural["report_kind"] == "structural-diff" and structural["complete"]
+        assert any(c["pointer"].endswith("/minLength") for c in structural["changes"])
+        summary = invoke(["summary", old, new], 0, format="json")
+        assert summary["counts"]["total"] == len(structural["changes"]) and "changes" not in summary
+        for command in ("diff", "summary"):
+            invoke([command, old, new], 0)
+            invoke([command, old, old], 0, format="json")
+            invoke([command, old, directory / "missing.json"], 2, format="json")
+            invoke([command, old, new, "--local-refs"], 2, format="json")
+        new.write_text('{"openapi":"3.1.1","openapi":"3.0.3"}', encoding="utf-8")
+        assert not invoke(["diff", old, new], 2, format="json")["complete"]
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

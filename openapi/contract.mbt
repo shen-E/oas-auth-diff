@@ -1,5 +1,5 @@
 ///|
-/// Parse a lossless-value snapshot and effective request parameters.
+/// Parse a lossless snapshot and extract effective request/response contracts.
 /// References use the same bounded, caller-controlled loader as authentication.
 pub fn parse_specification(
   text : String,
@@ -115,6 +115,8 @@ pub fn parse_specification(
                 http_method: verb.to_upper(),
                 path,
                 parameters: [],
+                request_body: None,
+                responses: [],
                 location: operation_at,
                 complete: false,
                 remainder: "",
@@ -145,7 +147,9 @@ pub fn parse_specification(
     without(fields, ["paths", "info", "tags", "externalDocs"]) {
     Obj(result) => {
       if result.get("components") is Some(Obj(components)) {
-        let retained = without(components, ["parameters"])
+        let retained = without(components, [
+          "parameters", "schemas", "requestBodies", "responses",
+        ])
         match retained {
           Obj(remaining) if remaining.is_empty() =>
             ignore(result.remove("components"))

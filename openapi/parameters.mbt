@@ -118,7 +118,7 @@ fn parameters(
       continue
     }
     let shape = without(fields, [
-      "name", "in", "required", "description", "example", "examples",
+      "name", "in", "required", "description", "example", "examples", "schema",
     ])
     charge_contract(shape, at, budget)
     if unevaluated_ref(shape) {
@@ -133,6 +133,12 @@ fn parameters(
       required,
       definition: value_json(Obj(fields)),
       location: at,
+      schema: extract_schema(
+        graph,
+        fields.get("schema"),
+        at.key("schema"),
+        budget,
+      ),
       shape: canonical(shape),
     })
   }
@@ -192,6 +198,7 @@ fn contract_operation(
   }
   let remainder = without(fields, [
     "parameters", "operationId", "summary", "description", "tags", "externalDocs",
+    "requestBody", "responses",
   ])
   charge_contract(remainder, at, budget)
   if unevaluated_ref(remainder) {
@@ -219,6 +226,18 @@ fn contract_operation(
     http_method,
     path,
     parameters: selected,
+    request_body: request_body(
+      graph,
+      fields.get("requestBody"),
+      at.key("requestBody"),
+      budget,
+    ),
+    responses: response_contracts(
+      graph,
+      fields.get("responses"),
+      at.key("responses"),
+      budget,
+    ),
     location: at,
     complete: true,
     remainder: quote(path_context) + canonical(remainder),

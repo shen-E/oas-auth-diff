@@ -1,5 +1,5 @@
 ///|
-/// A confirmed client compatibility break within the endpoint/parameter profile.
+/// A confirmed client compatibility break within the declared contract profile.
 pub(all) struct Finding {
   rule_id : String
   http_method : String
@@ -8,6 +8,7 @@ pub(all) struct Finding {
   position : String?
   message : String
   location : @openapi.Location
+  witness : Json?
 } derive(Debug, ToJson)
 
 ///|
@@ -42,6 +43,8 @@ pub fn Comparison::exit_code(self : Comparison) -> Int32 {
 pub fn checks() -> Array[String] {
   [
     "endpoint-removed", "request-parameter-added-required", "request-parameter-became-required",
+    "request-schema-narrowed", "response-schema-widened", "request-body-added-required",
+    "request-body-became-required", "request-body-media-type-removed", "response-media-type-added",
   ]
 }
 
@@ -70,10 +73,10 @@ fn parameter_identity(
 
 ///|
 fn has_parameter_default(parameter : @openapi.ParameterContract) -> Bool {
-  match parameter.definition {
-    Object(fields) =>
-      match fields.get("schema") {
-        Some(Object(schema)) => schema.contains("default")
+  match parameter.schema {
+    Some(schema) =>
+      match schema.definition {
+        Object(fields) => fields.contains("default")
         _ => false
       }
     _ => false
@@ -119,6 +122,8 @@ fn compare_parameters(
   after : @openapi.OperationContract,
   findings : Array[Finding],
   diagnostics : Array[@openapi.Diagnostic],
+  before_30 : Bool,
+  after_30 : Bool,
 ) -> Unit {
   let previous = Map([])
   let current = Map([])
@@ -151,17 +156,30 @@ fn compare_parameters(
         parameter.name +
         "; the candidate requires it",
         location: parameter.location,
+        witness: None,
       })
     }
     if previous.get(key) is Some(old) {
       if !old.same_shape(parameter) {
         unsupported(
           diagnostics,
-          "Changed parameter schema, serialization or other unevaluated field: " +
+          "Changed parameter serialization or other unevaluated field: " +
           parameter.name,
           parameter.location,
         )
       }
+      compare_schema(
+        old.schema,
+        parameter.schema,
+        before_30,
+        after_30,
+        after,
+        Some(parameter.name),
+        Some(parameter.position),
+        true,
+        findings,
+        diagnostics,
+      )
     } else if !parameter.required && has_parameter_default(parameter) {
       unsupported(
         diagnostics,
@@ -189,7 +207,27 @@ fn compare_parameters(
       }
     }
     match matched {
-      Some(candidate) if parameter.same_shape(candidate) => ()
+      Some(candidate) => {
+        if !parameter.same_shape(candidate) {
+          unsupported(
+            diagnostics,
+            "Changed path parameter serialization",
+            candidate.location,
+          )
+        }
+        compare_schema(
+          parameter.schema,
+          candidate.schema,
+          before_30,
+          after_30,
+          after,
+          Some(candidate.name),
+          Some("path"),
+          true,
+          findings,
+          diagnostics,
+        )
+      }
       _ =>
         unsupported(
           diagnostics,
@@ -218,7 +256,7 @@ fn compare_parameters(
 }
 
 ///|
-/// Check endpoint removal and new required non-path request parameters.
+/// Check endpoint, request parameter and payload Schema compatibility.
 /// Other changed contract fields produce diagnostics rather than a clean pass.
 pub fn compare(
   before : @openapi.Specification,
@@ -232,7 +270,7 @@ pub fn compare(
   if !before.same_remainder(after) {
     unsupported(
       diagnostics,
-      "Changed document fields outside the endpoint/parameter profile",
+      "Changed document fields outside the contract profile",
       { uri: after.source, pointer: "", },
     )
   }
@@ -259,16 +297,32 @@ pub fn compare(
           position: None,
           message: "Operation removed from the candidate contract",
           location: old.location,
+          witness: None,
         })
       Some(next) if next.complete => {
         if !old.same_remainder(next) {
           unsupported(
             diagnostics,
-            "Changed operation fields outside the endpoint/parameter profile",
+            "Changed operation fields outside the contract profile",
             next.location,
           )
         }
-        compare_parameters(old, next, findings, diagnostics)
+        compare_parameters(
+          old,
+          next,
+          findings,
+          diagnostics,
+          before.version.has_prefix("3.0."),
+          after.version.has_prefix("3.0."),
+        )
+        compare_payloads(
+          old,
+          next,
+          before.version.has_prefix("3.0."),
+          after.version.has_prefix("3.0."),
+          findings,
+          diagnostics,
+        )
       }
       _ => ()
     }
@@ -280,6 +334,7 @@ pub fn compare(
       a.rule_id,
       a.position.unwrap_or(""),
       a.parameter.unwrap_or(""),
+      a.location.pointer,
     ).compare(
       (
         b.path,
@@ -287,6 +342,7 @@ pub fn compare(
         b.rule_id,
         b.position.unwrap_or(""),
         b.parameter.unwrap_or(""),
+        b.location.pointer,
       ),
     )
   })

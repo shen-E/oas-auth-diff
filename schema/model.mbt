@@ -1,0 +1,228 @@
+///|
+pub suberror SchemaError {
+  SchemaError(String)
+} derive(Debug)
+
+///|
+pub extend SchemaError with Debug::{to_repr}
+
+///|
+priv enum Model {
+  Any
+  Never
+  Rule(Constraints)
+}
+
+///|
+priv struct Constraints {
+  types : Array[String]
+  values : Array[Json]?
+  properties : Map[String, Model]
+  required : Array[String]
+  additional : Model
+  items : Model
+}
+
+///|
+/// A bounded, parsed subset of OpenAPI Schema assertions.
+pub struct Schema {
+  priv model : Model
+}
+
+///|
+/// An exclusion is returned only with a value accepted by the source and
+/// rejected by the target. Unknown never represents a compatibility proof.
+pub(all) enum Inclusion {
+  Included
+  Excluded(Json)
+  Unknown(String)
+} derive(Debug)
+
+///|
+pub extend Inclusion with Debug::{to_repr}
+
+///|
+let kinds : Array[String] = [
+  "null", "boolean", "integer", "number", "string", "array", "object",
+]
+
+///|
+priv struct Budget {
+  mut remaining : Int32
+}
+
+///|
+fn consume(budget : Budget) -> Unit raise SchemaError {
+  budget.remaining -= 1
+  if budget.remaining < 0 {
+    raise SchemaError("Schema analysis exceeds 20000 steps")
+  }
+}
+
+///|
+fn read_model(
+  value : Json,
+  legacy : Bool,
+  depth : Int32,
+  budget : Budget,
+) -> Model raise SchemaError {
+  consume(budget)
+  if depth > 128 {
+    raise SchemaError("Schema depth exceeds 128")
+  }
+  let fields = match value {
+    True if !legacy => return Any
+    False if !legacy => return Never
+    Object(fields) => fields
+    _ => raise SchemaError("Expected a Schema object (or a 3.1 boolean Schema)")
+  }
+  for key in fields.keys() {
+    if ![
+        "type", "enum", "properties", "required", "additionalProperties", "items",
+        "nullable", "title", "description", "example", "examples", "$comment", "deprecated",
+      ].contains(key) &&
+      !key.has_prefix("x-") {
+      raise SchemaError("Unsupported Schema keyword: " + key)
+    }
+  }
+  let types = match fields.get("type") {
+    None => kinds.copy()
+    Some(String(name)) if kinds.contains(name) && (!legacy || name != "null") =>
+      if name == "number" {
+        ["integer", "number"]
+      } else {
+        [name]
+      }
+    Some(Array(names)) if !legacy && !names.is_empty() => {
+      let result = []
+      for name in names {
+        match name {
+          String(name) if kinds.contains(name) && !result.contains(name) =>
+            result.push(name)
+          _ => raise SchemaError("Invalid or duplicate Schema type")
+        }
+      }
+      if result.contains("number") && !result.contains("integer") {
+        result.push("integer")
+      }
+      result
+    }
+    _ => raise SchemaError("Invalid Schema type")
+  }
+  match fields.get("nullable") {
+    Some(True) if legacy =>
+      // OAS 3.0 nullable only extends an explicitly specified type.
+      if fields.contains("type") && !types.contains("null") {
+        types.push("null")
+      }
+    Some(False) if legacy => ()
+    None => ()
+    _ => raise SchemaError("nullable requires an OpenAPI 3.0 boolean")
+  }
+  let values = match fields.get("enum") {
+    None => None
+    Some(Array(values)) if !values.is_empty() => {
+      let seen = Map([])
+      for value in values {
+        consume(budget)
+        let key = identity(value)
+        if seen.contains(key) {
+          raise SchemaError("Duplicate enum value")
+        }
+        seen[key] = true
+      }
+      Some(values.map(copy_value))
+    }
+    _ => raise SchemaError("enum must be a nonempty array")
+  }
+  let properties = Map([])
+  match fields.get("properties") {
+    Some(Object(fields)) =>
+      for (name, child) in fields {
+        properties[name] = read_model(child, legacy, depth + 1, budget)
+      }
+    None => ()
+    _ => raise SchemaError("properties must be an object")
+  }
+  let required = match fields.get("required") {
+    None => []
+    Some(Array(names)) => {
+      let result = []
+      for name in names {
+        match name {
+          String(name) if !result.contains(name) => result.push(name)
+          _ => raise SchemaError("required must contain distinct strings")
+        }
+      }
+      result
+    }
+    _ => raise SchemaError("required must be an array")
+  }
+  let additional = match fields.get("additionalProperties") {
+    None | Some(True) => Any
+    Some(False) => Never
+    Some(value) => read_model(value, legacy, depth + 1, budget)
+  }
+  let items = match fields.get("items") {
+    None => Any
+    Some(value) => read_model(value, legacy, depth + 1, budget)
+  }
+  if types.length() == kinds.length() &&
+    values is None &&
+    properties.is_empty() &&
+    required.is_empty() &&
+    additional is Any &&
+    items is Any {
+    Any
+  } else {
+    Rule({ types, values, properties, required, additional, items, })
+  }
+}
+
+///|
+/// Parse type, enum, properties/required, additionalProperties and items.
+/// Unsupported assertions return an explicit error, including format/default,
+/// composition, numeric bounds and directional readOnly/writeOnly annotations.
+pub fn parse(
+  value : Json,
+  openapi_30~ : Bool = false,
+) -> Schema raise SchemaError {
+  validate_value(value, 0, { remaining: 20000, })
+  { model: read_model(value, openapi_30, 0, { remaining: 20000, }), }
+}
+
+///|
+fn validate_value(
+  value : Json,
+  depth : Int32,
+  budget : Budget,
+) -> Unit raise SchemaError {
+  consume(budget)
+  if depth > 128 {
+    raise SchemaError("JSON value depth exceeds 128")
+  }
+  match value {
+    Object(fields) =>
+      for (_, value) in fields {
+        validate_value(value, depth + 1, budget)
+      }
+    Array(values) =>
+      for value in values {
+        validate_value(value, depth + 1, budget)
+      }
+    Number(number, ..) => {
+      if number != number ||
+        number > 1.7976931348623157e308 ||
+        number < -1.7976931348623157e308 {
+        raise SchemaError("Non-finite Schema number")
+      }
+      let parsed = @json.parse(value.stringify()) catch {
+        _ => raise SchemaError("Invalid numeric representation")
+      }
+      if !(parsed is Number(_)) {
+        raise SchemaError("Expected a numeric representation")
+      }
+    }
+    _ => ()
+  }
+}

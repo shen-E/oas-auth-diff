@@ -1,6 +1,6 @@
 name = "shen-E/oas-auth-diff"
 
-version = "0.8.0"
+version = "0.9.0"
 
 readme = "README.md"
 
@@ -12,7 +12,7 @@ keywords = [ "openapi", "security", "authorization", "diff", "ci" ]
 
 preferred_target = "native"
 
-description = "Compare OpenAPI authorization and endpoint/parameter compatibility with explicit findings and scope."
+description = "OpenAPI document diffs, client contract compatibility and authorization regression checks with verified witnesses."
 
 import {
   "moonbitstack/moonyaml@0.1.2",

@@ -1,3 +1,4 @@
 import {
   "shen-E/oas-auth-diff/openapi",
+  "shen-E/oas-auth-diff/schema",
 }
