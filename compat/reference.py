@@ -100,11 +100,18 @@ def execute(binary, command):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ours", type=Path, required=True)
+    parser.add_argument("--ours", type=Path, help="native executable; defaults to the local MoonBit build")
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    ours, reference = args.ours.resolve(), args.reference.resolve()
+    if args.ours:
+        ours = args.ours.resolve()
+    else:
+        build = Path(__file__).resolve().parents[1] / "_build/native/debug/build/cmd/oas-auth-diff"
+        ours = next((path for path in (build / "oas-auth-diff.exe", build / "oas-auth-diff") if path.is_file()), None)
+        if ours is None:
+            raise SystemExit("build cmd/oas-auth-diff --target native or pass --ours")
+    reference = args.reference.resolve()
     version = subprocess.check_output([str(reference), "--version"], encoding="utf-8").strip()
     if version != "oasdiff version " + REFERENCE_VERSION:
         raise SystemExit("expected oasdiff version " + REFERENCE_VERSION + "; got " + version)

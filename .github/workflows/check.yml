@@ -70,7 +70,7 @@ jobs:
           curl -fL https://github.com/oasdiff/oasdiff/releases/download/v1.35.0/oasdiff_1.35.0_linux_amd64.tar.gz -o "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz"
           (cd "$oracle" && sha256sum --check --ignore-missing checksums.txt)
           tar -xzf "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz" -C "$oracle"
-          python compat/reference.py --ours _build/native/debug/build/cmd/oas-auth-diff/oas-auth-diff --reference "$oracle/oasdiff" --output _build/compat-reference.json
+          python compat/reference.py --reference "$oracle/oasdiff" --output _build/compat-reference.json
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
