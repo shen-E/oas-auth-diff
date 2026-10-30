@@ -1,10 +1,10 @@
 ///|
-/// Render the bounded endpoint/parameter compatibility profile as JSON.
+/// Render the declared contract compatibility profile as JSON.
 pub fn render_compatibility_json(comparison : @compat.Comparison) -> String {
   let report : Json = {
     "schema_version": 1,
     "report_kind": "compatibility",
-    "scope": "endpoint-removal-and-required-parameters",
+    "scope": "endpoint-parameter-and-payload-schema",
     "checked_rules": Json(@compat.checks()),
     "complete": comparison.complete,
     "exit_code": comparison.exit_code(),
@@ -12,7 +12,15 @@ pub fn render_compatibility_json(comparison : @compat.Comparison) -> String {
       "before": comparison.before_source,
       "after": comparison.after_source,
     },
-    "findings": Json(comparison.findings),
+    "findings": Json(
+      comparison.findings.map(finding => {
+        let value = finding.to_json()
+        if value is Object(fields) {
+          fields["witness_verified"] = Json::boolean(finding.witness is Some(_))
+        }
+        value
+      }),
+    ),
     "diagnostics": Json(comparison.diagnostics),
   }
   report.stringify(indent=2)
@@ -23,13 +31,16 @@ pub fn render_compatibility_text(comparison : @compat.Comparison) -> String {
   let lines = [
     "oas-auth-diff: compatibility " +
     (if comparison.complete { "complete" } else { "incomplete" }),
-    "Profile: endpoint removal and required request parameters (3 checks)",
+    "Profile: endpoint, parameter and payload Schema compatibility (9 checks)",
     "Other changed contract fields are not classified; they make analysis incomplete.",
   ]
   for finding in comparison.findings {
     lines.push(
       "\{finding.http_method} \{finding.path}: \{finding.rule_id}: \{finding.message}",
     )
+    if finding.witness is Some(value) {
+      lines.push("  witness: " + value.stringify())
+    }
   }
   for diagnostic in comparison.diagnostics {
     lines.push(
@@ -53,7 +64,7 @@ pub fn render_compatibility_sarif(
         )
       None => comparison.after_source
     }
-    let key : Json = [
+    let key : Array[Json] = [
       "oas-auth-diff/compatibility/v1",
       source,
       finding.rule_id,
@@ -66,8 +77,13 @@ pub fn render_compatibility_sarif(
         finding.parameter.unwrap_or("")
       },
     ]
+    if finding.witness is Some(_) ||
+      finding.rule_id == "request-body-media-type-removed" ||
+      finding.rule_id == "response-media-type-added" {
+      key.push(Json::string(finding.location.pointer))
+    }
     let fingerprint = @crypto.bytes_to_hex_string(
-      @crypto.sha256(@utf8.encode(key.stringify())),
+      @crypto.sha256(@utf8.encode(Json(key).stringify())),
     )
     let result : Json = {
       "ruleId": finding.rule_id,
@@ -75,7 +91,12 @@ pub fn render_compatibility_sarif(
       "message": { "text": finding.message },
       "locations": [sarif_location(finding.location, source_root)],
       "partialFingerprints": { "compatibility/v1": fingerprint },
-      "properties": { "method": finding.http_method, "path": finding.path },
+      "properties": {
+        "method": finding.http_method,
+        "path": finding.path,
+        "witness": Json(finding.witness),
+        "witness_verified": finding.witness is Some(_),
+      },
     }
     result
   })
@@ -117,7 +138,7 @@ pub fn render_compatibility_sarif(
       "properties",
       {
         "report_kind": "compatibility",
-        "scope": "endpoint-removal-and-required-parameters",
+        "scope": "endpoint-parameter-and-payload-schema",
         "checked_rules": Json(@compat.checks()),
       },
     ),

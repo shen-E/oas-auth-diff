@@ -11,6 +11,8 @@ import {
 // Values
 pub fn compare(@openapi.Document, @openapi.Document) -> Comparison
 
+pub fn compare_snapshots(@openapi.Snapshot, @openapi.Snapshot) -> StructuralComparison
+
 pub fn failure_report(Array[@openapi.Diagnostic]) -> Comparison
 
 pub fn render_compatibility_json(@compat.Comparison) -> String
@@ -22,6 +24,10 @@ pub fn render_compatibility_text(@compat.Comparison) -> String
 pub fn render_json(Comparison) -> String
 
 pub fn render_sarif(Comparison, source_root? : SarifSourceRoot?) -> String
+
+pub fn render_structural_json(StructuralComparison, summary? : Bool) -> String
+
+pub fn render_structural_text(StructuralComparison, summary? : Bool) -> String
 
 pub fn render_text(Comparison) -> String
 
@@ -79,6 +85,12 @@ pub struct SarifSourceRoot {
 }
 pub fn SarifSourceRoot::new(String) -> Self raise SarifError
 pub fn SarifSourceRoot::uri(Self) -> String
+
+pub struct StructuralComparison {
+  changes : Array[@openapi.ValueChange]
+  before_source : String
+  after_source : String
+}
 
 // Type aliases
 

@@ -24,12 +24,14 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.8.0\n" +
+  "oas-auth-diff 0.9.0\n" +
   "Usage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff breaking BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
+  "       oas-auth-diff diff|summary BEFORE AFTER [--format text|json]\n" +
   "       oas-auth-diff checks [--format json]\n" +
   "       oas-auth-diff --help | --version\n\n" +
-  "compare checks authorization; breaking checks endpoint removal and required request parameters.\n" +
+  "compare checks authorization; breaking checks endpoint, parameter and payload compatibility.\n" +
+  "diff and summary enumerate entry-document values, including metadata; references are not expanded.\n" +
   "Other changed contract fields make breaking incomplete; this is not full OpenAPI validation.\n" +
   "--local-refs loads referenced files within each entry's directory.\n" +
   "--ref-root DIR enables local references within an explicit boundary.\n" +
@@ -43,7 +45,9 @@ fn usage() -> String {
 fn parse_options(args : Array[String]) -> Options raise CliError {
   match args {
     [_, command, before, after, .. rest] if command == "compare" ||
-      command == "breaking" => {
+      command == "breaking" ||
+      command == "diff" ||
+      command == "summary" => {
       let mut format = "text"
       let mut local_refs = false
       let mut ref_root = None
@@ -115,10 +119,16 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
       if source_root is Some(_) && format != "sarif" {
         raise CliError("--source-root requires --format sarif")
       }
-      if command == "breaking" &&
+      if command != "compare" &&
         (before_document_url is Some(_) || after_document_url is Some(_)) {
         raise CliError(
           "document URL options apply to compare; breaking does not classify endpoint URLs",
+        )
+      }
+      if (command == "diff" || command == "summary") &&
+        (format == "sarif" || local_refs || source_root is Some(_)) {
+        raise CliError(
+          "diff/summary support text or JSON entry-document values without reference loading or source roots",
         )
       }
       {
@@ -135,7 +145,7 @@ fn parse_options(args : Array[String]) -> Options raise CliError {
     }
     _ =>
       raise CliError(
-        "expected compare or breaking BEFORE AFTER [--format text|json|sarif]",
+        "expected compare, breaking, diff or summary BEFORE AFTER [--format text|json|sarif]",
       )
   }
 }
@@ -281,7 +291,31 @@ fn failed(
   source : String,
   format : String,
   compatibility~ : Bool = false,
+  structural~ : Bool = false,
 ) -> Int32 {
+  if structural {
+    if format == "json" {
+      let report : Json = {
+        "schema_version": 1,
+        "report_kind": "structural-diff",
+        "scope": "entry-document-values",
+        "complete": false,
+        "changes": [],
+        "diagnostics": [
+          {
+            "code": "input-error",
+            "message": message,
+            "location": { "uri": source, "pointer": "" },
+          },
+        ],
+      }
+      println(report.stringify(indent=2))
+    } else {
+      println("oas-auth-diff: entry-document diff incomplete: " + message)
+    }
+    stderr(source + ": " + message)
+    return 2
+  }
   if compatibility {
     write_compatibility_report(
       {
@@ -320,7 +354,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.8.0")
+      println("oas-auth-diff 0.9.0")
       return 0
     }
     [_, "checks"] => {
@@ -334,6 +368,8 @@ fn run(args : Array[String]) -> Int32 {
     _ => ()
   }
   let compatibility = args.length() > 1 && args[1] == "breaking"
+  let structural = args.length() > 1 &&
+    (args[1] == "diff" || args[1] == "summary")
   let options = parse_options(args) catch {
     error =>
       return failed(
@@ -341,6 +377,7 @@ fn run(args : Array[String]) -> Int32 {
         "oas-auth-diff:arguments",
         selected_format(args),
         compatibility~,
+        structural~,
       )
   }
   let source_root = sarif_source_root(options.source_root, options.local_refs) catch {
@@ -350,6 +387,7 @@ fn run(args : Array[String]) -> Int32 {
         "oas-auth-diff:arguments",
         options.format,
         compatibility~,
+        structural~,
       )
   }
   let before = read_source(options.before, options.local_refs) catch {
@@ -359,6 +397,7 @@ fn run(args : Array[String]) -> Int32 {
         file_uri(options.before),
         options.format,
         compatibility~,
+        structural~,
       )
   }
   let before_load = local_loader(
@@ -372,6 +411,7 @@ fn run(args : Array[String]) -> Int32 {
         before.source,
         options.format,
         compatibility~,
+        structural~,
       )
   }
   let after = read_source(options.after, options.local_refs) catch {
@@ -381,6 +421,7 @@ fn run(args : Array[String]) -> Int32 {
         file_uri(options.after),
         options.format,
         compatibility~,
+        structural~,
       )
   }
   let after_load = local_loader(
@@ -394,7 +435,46 @@ fn run(args : Array[String]) -> Int32 {
         after.source,
         options.format,
         compatibility~,
+        structural~,
       )
+  }
+  if structural {
+    let baseline = @openapi.parse_snapshot(
+      before.text,
+      format=before.format,
+      source=before.source,
+    ) catch {
+      error =>
+        return failed(
+          error.to_string(),
+          before.source,
+          options.format,
+          structural=true,
+        )
+    }
+    let candidate = @openapi.parse_snapshot(
+      after.text,
+      format=after.format,
+      source=after.source,
+    ) catch {
+      error =>
+        return failed(
+          error.to_string(),
+          after.source,
+          options.format,
+          structural=true,
+        )
+    }
+    let result = @diff.compare_snapshots(baseline, candidate)
+    let summary = options.command == "summary"
+    println(
+      if options.format == "json" {
+        @diff.render_structural_json(result, summary~)
+      } else {
+        @diff.render_structural_text(result, summary~)
+      },
+    )
+    return 0
   }
   if options.command == "breaking" {
     let baseline = @openapi.parse_specification(

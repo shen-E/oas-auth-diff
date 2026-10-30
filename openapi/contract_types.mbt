@@ -6,11 +6,67 @@ pub struct ParameterContract {
   required : Bool
   definition : Json
   location : Location
+  schema : SchemaContract?
   priv shape : String
 }
 
 ///|
-/// Whether two parameter definitions agree apart from requiredness and labels.
+/// A resolved Schema value and its actual source origin.
+pub struct SchemaContract {
+  definition : Json
+  location : Location
+}
+
+///|
+pub struct MediaContract {
+  media_type : String
+  schema : SchemaContract?
+  location : Location
+  priv remainder : String
+}
+
+///|
+pub fn MediaContract::same_remainder(
+  self : MediaContract,
+  other : MediaContract,
+) -> Bool {
+  self.remainder == other.remainder
+}
+
+///|
+pub struct BodyContract {
+  required : Bool
+  content : Array[MediaContract]
+  location : Location
+  priv remainder : String
+}
+
+///|
+pub fn BodyContract::same_remainder(
+  self : BodyContract,
+  other : BodyContract,
+) -> Bool {
+  self.remainder == other.remainder
+}
+
+///|
+pub struct ResponseContract {
+  status : String
+  content : Array[MediaContract]
+  location : Location
+  priv remainder : String
+}
+
+///|
+pub fn ResponseContract::same_remainder(
+  self : ResponseContract,
+  other : ResponseContract,
+) -> Bool {
+  self.remainder == other.remainder
+}
+
+///|
+/// Whether non-Schema fields agree apart from requiredness and labels.
 pub fn ParameterContract::same_shape(
   self : ParameterContract,
   other : ParameterContract,
@@ -19,18 +75,20 @@ pub fn ParameterContract::same_shape(
 }
 
 ///|
-/// Effective path-level and operation-level parameters of one HTTP operation.
+/// Effective parameters, request body and responses of one HTTP operation.
 pub struct OperationContract {
   http_method : String
   path : String
   parameters : Array[ParameterContract]
+  request_body : BodyContract?
+  responses : Array[ResponseContract]
   location : Location
   complete : Bool
   priv remainder : String
 }
 
 ///|
-/// Whether fields outside the parameter list are unchanged.
+/// Whether fields outside parameters, request bodies and responses agree.
 pub fn OperationContract::same_remainder(
   self : OperationContract,
   other : OperationContract,
@@ -56,7 +114,7 @@ pub fn Specification::to_json(self : Specification) -> Json {
 }
 
 ///|
-/// Whether document fields outside paths and parameter components agree.
+/// Whether document fields outside paths and extracted components agree.
 pub fn Specification::same_remainder(
   self : Specification,
   other : Specification,

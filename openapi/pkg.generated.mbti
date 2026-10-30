@@ -11,6 +11,8 @@ pub fn parse_document(String, format~ : InputFormat, source? : String, document_
 
 pub fn parse_pair(SourceDocument, SourceDocument, before_load? : ((String, String) -> SourceDocument raise DocumentError)?, after_load? : ((String, String) -> SourceDocument raise DocumentError)?, before_document_url? : String?, after_document_url? : String?) -> DocumentPair raise PairError
 
+pub fn parse_snapshot(String, format~ : InputFormat, source? : String) -> Snapshot raise DocumentError
+
 pub fn parse_specification(String, format~ : InputFormat, source? : String, load? : ((String, String) -> SourceDocument raise DocumentError)?) -> Specification raise DocumentError
 
 pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ : (String, String) -> SourceDocument raise DocumentError, document_url? : String?) -> Document raise DocumentError
@@ -38,6 +40,14 @@ pub fn PairError::to_string(Self) -> String
 pub impl Show for PairError
 
 // Types and methods
+pub struct BodyContract {
+  required : Bool
+  content : Array[MediaContract]
+  location : Location
+  // private fields
+}
+pub fn BodyContract::same_remainder(Self, Self) -> Bool
+
 pub(all) struct Diagnostic {
   code : String
   message : String
@@ -80,6 +90,14 @@ pub fn Location::not_equal(Self, Self) -> Bool
 pub fn Location::to_json(Self) -> Json
 pub fn Location::to_repr(Self) -> @debug.Repr
 
+pub struct MediaContract {
+  media_type : String
+  schema : SchemaContract?
+  location : Location
+  // private fields
+}
+pub fn MediaContract::same_remainder(Self, Self) -> Bool
+
 pub(all) struct Operation {
   http_method : String
   path : String
@@ -96,6 +114,8 @@ pub struct OperationContract {
   http_method : String
   path : String
   parameters : Array[ParameterContract]
+  request_body : BodyContract?
+  responses : Array[ResponseContract]
   location : Location
   complete : Bool
   // private fields
@@ -108,9 +128,23 @@ pub struct ParameterContract {
   required : Bool
   definition : Json
   location : Location
+  schema : SchemaContract?
   // private fields
 }
 pub fn ParameterContract::same_shape(Self, Self) -> Bool
+
+pub struct ResponseContract {
+  status : String
+  content : Array[MediaContract]
+  location : Location
+  // private fields
+}
+pub fn ResponseContract::same_remainder(Self, Self) -> Bool
+
+pub struct SchemaContract {
+  definition : Json
+  location : Location
+}
 
 pub(all) struct Scheme {
   name : String
@@ -121,6 +155,13 @@ pub fn Scheme::equal(Self, Self) -> Bool
 pub fn Scheme::not_equal(Self, Self) -> Bool
 pub fn Scheme::to_json(Self) -> Json
 pub fn Scheme::to_repr(Self) -> @debug.Repr
+
+pub struct Snapshot {
+  source : String
+  version : String
+  // private fields
+}
+pub fn Snapshot::changes(Self, Self) -> Array[ValueChange]
 
 pub(all) struct SourceDocument {
   text : String
@@ -140,6 +181,15 @@ pub struct Specification {
 }
 pub fn Specification::same_remainder(Self, Self) -> Bool
 pub fn Specification::to_json(Self) -> Json
+
+pub(all) struct ValueChange {
+  kind : String
+  pointer : String
+  before : Json?
+  after : Json?
+} derive(ToJson, @debug.Debug)
+pub fn ValueChange::to_json(Self) -> Json
+pub fn ValueChange::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

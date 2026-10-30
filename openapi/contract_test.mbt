@@ -124,7 +124,7 @@ test "snapshot calls do not expose the parser's retained maps" {
 }
 
 ///|
-test "unevaluated schema references never return a clean parameter analysis" {
+test "missing or unavailable schema references never return a clean analysis" {
   for
     extra in [
       "\"parameters\":[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"$ref\":\"schema.json\"}}]",
@@ -137,7 +137,9 @@ test "unevaluated schema references never return a clean parameter analysis" {
       format=@openapi.Json,
     )
     assert_true(
-      document.diagnostics.any(d => d.code == "contract.unevaluated-ref"),
+      document.diagnostics.any(d => {
+        d.code == "ref.external" || d.code == "ref.missing"
+      }),
     )
     assert_false(document.operations[0].complete)
   }

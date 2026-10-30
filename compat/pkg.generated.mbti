@@ -31,6 +31,7 @@ pub(all) struct Finding {
   position : String?
   message : String
   location : @openapi.Location
+  witness : Json?
 } derive(ToJson, @debug.Debug)
 pub fn Finding::to_json(Self) -> Json
 pub fn Finding::to_repr(Self) -> @debug.Repr

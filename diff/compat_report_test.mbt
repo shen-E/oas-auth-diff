@@ -15,7 +15,7 @@ test "compatibility JSON and SARIF retain the profile and verified findings" {
   match report {
     {
       "report_kind": String("compatibility"),
-      "scope": String("endpoint-removal-and-required-parameters"),
+      "scope": String("endpoint-parameter-and-payload-schema"),
       "exit_code": Number(1, ..),
       "findings": [finding],
       ..
@@ -57,5 +57,5 @@ test "compatibility JSON and SARIF retain the profile and verified findings" {
     } => ()
     _ => fail("unexpected compatibility SARIF")
   }
-  assert_true(@diff.render_compatibility_text(comparison).contains("3 checks"))
+  assert_true(@diff.render_compatibility_text(comparison).contains("9 checks"))
 }
