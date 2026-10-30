@@ -1,6 +1,7 @@
 import {
   "shen-E/oas-auth-diff/diff",
   "shen-E/oas-auth-diff/openapi",
+  "shen-E/oas-auth-diff/compat",
   "moonbitlang/core/env",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/x/path",
