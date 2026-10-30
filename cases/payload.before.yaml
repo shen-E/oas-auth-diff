@@ -1,0 +1,27 @@
+openapi: 3.1.1
+info:
+  title: Order payload contract
+  version: 1.0.0
+paths:
+  /orders:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                state:
+                  type: string
+                  enum: [draft, confirmed]
+      responses:
+        '200':
+          description: Order accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: integer

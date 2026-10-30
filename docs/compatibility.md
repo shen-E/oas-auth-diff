@@ -1,103 +1,155 @@
-# Endpoint and parameter compatibility
+# OpenAPI changes and client compatibility
 
-`breaking` checks existing operations for endpoint removal, newly required
-query/header/cookie parameters, and optional parameters becoming required.
-These changes can reject requests that satisfied the previous contract.
-`compare` continues to check authorization regressions independently.
+Use `diff` to inspect general document edits, `breaking` to gate client contract
+changes, and `compare` to check authorization regressions. The commands have
+separate report kinds and analysis scopes.
 
 ```sh
+oas-auth-diff diff cases/payload.before.yaml cases/payload.after.json --format json
+oas-auth-diff summary cases/payload.before.yaml cases/payload.after.json
+oas-auth-diff breaking cases/payload.before.yaml cases/payload.after.json --format json
+oas-auth-diff breaking cases/payload.before.yaml cases/payload.after.json --format sarif --source-root .
 oas-auth-diff checks --format json
-oas-auth-diff breaking cases/parameters.before.yaml cases/parameters.after.json
-oas-auth-diff breaking cases/parameters.before.yaml cases/parameters.after.json --format json
-oas-auth-diff breaking cases/parameters.before.yaml cases/parameters.after.json --format sarif --source-root .
 ```
 
-The example adds the required `tenant` query parameter and exits 1. Repeating
-one input exits 0; malformed parameters, unavailable references or unclassified
-contract changes exit 2. JSON reports identify `report_kind: "compatibility"`,
-the analysis scope and the exact `checked_rules`. `complete` refers to that
-profile, not full OpenAPI validation or full oasdiff compatibility.
+The example rejects the formerly valid request `{"state":"draft"}` and permits
+a response without the formerly guaranteed `id`. Both Schema findings have
+independently evaluated data witnesses. `witness_verified: true` distinguishes
+a verified JSON `null` witness from a finding without a witness. These describe
+Schema instances rather than complete HTTP exchanges.
+
+## General document diff
+
+`diff` enumerates added, removed and modified source values, including
+documentation, extensions, security declarations and unsupported Schema fields.
+Changes contain RFC 6901 pointers and before/after values in stable pointer order.
+Object field order and equivalent decimal spellings do not create edits; array
+order remains significant. `summary` counts those edits.
+
+Both commands load strict JSON/YAML snapshots of the entry documents. They do
+not expand references, normalize set-valued arrays or infer compatibility.
+A referenced file changing at an unchanged `$ref` site is observed by `breaking`
+when that contract is resolved. Structural `complete` describes value enumeration,
+not specification validation. Text and JSON are supported. Successful diffs exit 0,
+including when values changed; input errors exit 2. Reference-loading, deployment
+URL and SARIF options belong to the semantic commands.
+
+## Compatibility checks
+
+`breaking` supports text, JSON and SARIF. It exits 0 for complete analysis without
+findings, 1 for confirmed breaks, and 2 for input errors or incomplete analysis.
+Confirmed findings survive incomplete results. JSON identifies
+`report_kind: "compatibility"`, `scope: "endpoint-parameter-and-payload-schema"`
+and the exact `checked_rules`.
 
 | Check | Trigger |
 | --- | --- |
 | `endpoint-removed` | An existing method/path-template identity disappears |
-| `request-parameter-added-required` | A matched operation gains a required non-path parameter |
-| `request-parameter-became-required` | A matched operation's parameter changes from optional to required |
+| `request-parameter-added-required` | A required query/header/cookie parameter is added |
+| `request-parameter-became-required` | An optional parameter becomes required |
+| `request-schema-narrowed` | An old parameter/body instance is rejected by the new Schema |
+| `response-schema-widened` | A new response instance is rejected by the old Schema |
+| `request-body-added-required` | An operation gains a required request body |
+| `request-body-became-required` | An optional body becomes required |
+| `request-body-media-type-removed` | An accepted request media type loses coverage |
+| `response-media-type-added` | A response gains a media type absent from the old contract |
 
-Path-level parameters are inherited, and operation declarations override them
-by `(in, name)`. Duplicate declarations within one list are errors. Header
-names compare without case; OpenAPI's ignored `Accept`, `Content-Type` and
-`Authorization` header parameter declarations do not introduce requirements.
-Path parameter declarations must agree with the template and be required;
-renaming a template parameter preserves operation matching. A required default
-does not make the parameter optional.
+Request comparison proves **old instances are included in new instances**;
+response comparison proves **new instances are included in old instances**.
+The pure `schema` package supports types (including integer/number inclusion),
+enums with exact decimal equality, nested object properties and requiredness,
+`additionalProperties`, and array `items`. OpenAPI 3.0 `nullable` applies only
+with an explicit type; 3.1 type unions and boolean schemas are supported.
+Enum, required-name and type-array order do not change compatibility.
 
-Parameter and Path Item references use the existing local reference loader and
-budgets. `--local-refs` and `--ref-root` retain their directory confinement.
-Schema/content/response references are not resolved by this profile and make
-the affected operation incomplete. This prevents a referenced contract from
-changing outside the fields observed by the checker.
+The inclusion algorithm returns a proof, a counterexample or Unknown. Each
+counterexample is checked with a separate instance evaluator. Failure to prove
+inclusion alone never becomes a finding. Schema parsing/comparison have
+20000-step budgets; Schema and instance nesting is limited to 128. Exhaustion
+produces an incomplete result.
 
-Changed parameter schemas, serialization, removed parameters, document-level
-contract fields or other operation fields are reported as unclassified rather
-than clean compatibility. Confirmed findings survive an incomplete result.
-Optional parameter additions with defaults are also unclassified. Structural
-metadata handling is deliberately conservative: for example, edits inside a
-response description can still require review. Authentication changes remain
-the responsibility of `compare`; run both gates when both policies matter.
+Unsupported Schema assertions produce diagnostics even when present on both
+sides. These include numeric/string/array-size bounds, patterns, formats,
+defaults, readOnly/writeOnly behavior, composition (`allOf`/`anyOf`/`oneOf`),
+discriminators, dynamic references and custom dialects. This is a bounded
+checker, not a complete JSON Schema inclusion solver.
+
+Path-level parameters are inherited; operation declarations override them by
+`(in, name)`. Header names compare without case and reserved header parameters
+are ignored as required by OpenAPI. Path declarations must match their template
+and be required. Template parameter renames preserve matching by position.
+
+Parameter, body, response, Path Item and nested Schema references use the bounded,
+caller-controlled local source graph. `--local-refs`/`--ref-root` retain their
+directory confinement. Components can be renamed or inlined without changing a
+resolved Schema. Recursive Schemas, assertion siblings beside a Schema `$ref`,
+`$id` resource scopes, unavailable targets and unresolved header/link references
+produce diagnostics. References inside example data are not loaded. Locations
+identify the actual referenced Schema resource without invented line numbers.
+
+Media type names compare without case. Wildcards and media type parameters require
+range matching and are incomplete. Response status additions/removals, response
+headers/links, parameter serialization changes/removals, removed request bodies,
+and other changed document/operation fields remain unclassified. Response
+descriptions and Schema documentation edits do not create breaks. Authentication
+changes belong to `compare`; run both semantic gates in CI.
 
 ## Library
 
-Parse each input with `openapi.parse_specification`, optionally supplying a
-caller-controlled loader, then call `compat.compare`. Existing authentication
-document types and parser signatures are unchanged. `Specification.to_json()`
-returns a fresh snapshot, including request/response bodies and Schema fields
-not yet classified by this profile. Number representations are retained;
-JSON's `as_number` still returns a rounded Double. YAML numeric spellings are
-converted to exact JSON decimal representations without a Double round-trip.
+Parse with `openapi.parse_specification`, optionally supplying a loader, then call
+`compat.compare`. The model retains effective parameters, bodies, responses and
+resolved media Schemas. `Specification.to_json()` returns a fresh source snapshot
+with exact numeric contents. `ParameterContract.same_shape` compares non-Schema
+fields; compare its separate `schema` field for Schema semantics.
+`compat.Finding.witness` is `Some(value)` only for verified Schema counterexamples;
+it is an added public record field in v0.9.0.
 
-## Reference scope
+Use `openapi.parse_snapshot` and `diff.compare_snapshots` for source-value diffs;
+`render_structural_text/json` optionally accept `summary=true`. The `schema` package
+is independent of OpenAPI and I/O: `schema.parse`, `schema.subset(source, target)`
+and `Schema.accepts(value)` expose the core operations. Existing authorization
+parser and report interfaces are unchanged.
+
+## Reference scope and interoperability
 
 The reference is **oasdiff v1.35.0**, commit
-`a4ba100f880c7579765c5e63915a99bf1acc6967`. The MoonBit implementation runs
-independently; oasdiff is a test oracle, not a runtime dependency.
+`a4ba100f880c7579765c5e63915a99bf1acc6967`. It is a test oracle with no runtime
+dependency. Its catalog has 778 changelog checks and 121 validation checks; the
+nine local IDs aggregate a smaller, explicitly described set of behaviors.
 
-| Reference capability | Current implementation |
+| Reference capability | Current scope |
 | --- | --- |
-| Authorization semantics | Independent policy comparison with verified access witnesses |
-| Effective parameters and endpoint matching | Implemented for the profile above |
-| Backward compatibility rules | The three checks listed above; remaining rules are not implemented |
-| General diff, summary and consumer changelog | Not implemented |
-| Request/response Schema compatibility | Not implemented; changed observed fields are unclassified |
-| Full validation and OpenAPI 3.1 keyword handling | Not implemented; input and parameter checks are not a complete validator |
-| Schema flattening, upgrade and lifecycle/version policies | Not implemented |
-| Remote/Git input, composed specs and upstream configuration options | Not implemented; local loader controls apply |
-| Output | Text, JSON and SARIF; upstream output schemas and exit codes are not emulated |
+| Authorization | Independent policies with verified permission witnesses |
+| General diff and summary | Entry-document values, including metadata; no reference expansion |
+| Effective parameters and endpoint matching | Requiredness, removal and path-template identity |
+| Request/response compatibility | Nine checks and the supported Schema assertions above |
+| Consumer changelog, lifecycle/version policies | Not implemented |
+| Full validation, composition and JSON Schema dialects | Not implemented |
+| Schema flattening/upgrade, multi-file structural diff | Not implemented |
+| Remote/Git input and upstream configuration surface | Not implemented; local loading only |
+| Reports | Local text/JSON/SARIF APIs; upstream schemas are not emulated |
 
-The rule list is explicit and is not a claim of feature parity with the
-reference. The pinned reference's complete catalog is available with
-`oasdiff checks changelog --format json` and `oasdiff checks validate --format json`.
-The v1.35.0 catalogs contain 778 changelog checks and 121 validation checks.
+`compat/reference.py` checks 48 endpoint/parameter scenarios in four JSON/YAML
+combinations (192 comparisons). `compat/schema_reference.py` checks 46
+request/response scenarios in those combinations (184 comparisons): 3.0/3.1
+nullability, types, enum changes, object requiredness, array items, components
+and documentation-only edits. It checks manually specified verdicts and affected
+operations, and retains both tools' findings. Generic local Schema IDs aggregate
+several upstream rule IDs.
 
-`compat/reference.py` compares manually specified breaking/nonbreaking cases
-against that version, including OpenAPI 3.0/3.1, inheritance, component references
-and header case. It checks the verdict, mapped rules and affected operations,
-and records all differences. The reference runs with `--flatten-params` so both
-tools compare effective inherited parameters, and `--fail-on ERR` to compare
-confirmed breaks. Original paths remain in the report; matching uses template
-identity. It does not test the other reference checks.
-
-The matrix has 48 semantic scenarios across four JSON/YAML input combinations.
-The result also inventories every reference check, distinguishing profile-only
-counterparts from checks that are not implemented.
+The oracle uses `--flatten-params` for effective parameters and `--fail-on ERR`
+for confirmed breaks. The parameter matrix inventories the reference catalog;
+checks outside that matrix are not implied to be covered. CI verifies the pinned
+binary checksum and uploads both result files. Independent MoonBit tests also
+enumerate 16129 finite enum policy pairs and check 576 object Schema pairs against
+a separate finite-assignment evaluator.
 
 ```sh
-python compat/reference.py --ours path/to/oas-auth-diff --reference path/to/oasdiff --output reference-results.json
+python compat/reference.py --reference path/to/oasdiff --output parameter-results.json
+python compat/schema_reference.py --reference path/to/oasdiff --output schema-results.json
 ```
 
-The upstream counterparts are `api-path-removed-without-deprecation`,
-`new-required-request-parameter`, and `request-parameter-became-required`.
-Our IDs and output format are separate APIs.
-
-Sources: [reference commands](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/README.md),
-[check classification](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/CHECKS.md).
+Sources: [OpenAPI 3.0 Schema](https://spec.openapis.org/oas/v3.0.4.html#schema-object),
+[OpenAPI 3.1 Schema](https://spec.openapis.org/oas/v3.1.1.html#schema-object),
+[oasdiff commands](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/README.md),
+[check catalog](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/CHECKS.md).

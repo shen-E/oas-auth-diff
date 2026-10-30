@@ -3,10 +3,11 @@
 Find authentication regressions between two OpenAPI documents, with a concrete
 permission set that the new version accepts and the old version rejects.
 
-The separate `breaking` command checks endpoint removal and required request
-parameters. Other changed contract fields remain unclassified and make that
-analysis incomplete. See [compatibility scope](docs/compatibility.md) for the
-three implemented checks and the fixed oasdiff reference.
+`diff` and `summary` inspect general entry-document changes, including metadata.
+`breaking` checks endpoint/parameter contracts and request/response Schema
+compatibility, with concrete data witnesses for Schema breaks. See
+[compatibility scope](docs/compatibility.md) for the nine checks, supported Schema
+assertions, unresolved fields and the pinned oasdiff v1.35.0 reference.
 
 For example, changing an operation from requiring `orders:read` **and**
 `orders:write` to requiring only `orders:read` produces a witness with the account
@@ -28,6 +29,9 @@ oas-auth-diff compare cases/orders.before.yaml cases/orders.after.json --format 
 oas-auth-diff compare before/api.yaml after/api.yaml --local-refs
 oas-auth-diff compare cases/paired-schemes/before.yaml cases/paired-schemes/after.json --local-refs
 oas-auth-diff breaking cases/parameters.before.yaml cases/parameters.after.json --format json
+oas-auth-diff breaking cases/payload.before.yaml cases/payload.after.json --format json
+oas-auth-diff diff cases/payload.before.yaml cases/payload.after.json --format json
+oas-auth-diff summary cases/payload.before.yaml cases/payload.after.json
 oas-auth-diff checks --format json
 ```
 
@@ -73,7 +77,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.8.0 package is prepared for release; it has not been uploaded to
+The v0.9.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -81,10 +85,10 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.8.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.9.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.8.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.8.0`.
+`shen-E/oas-auth-diff@0.9.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.9.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
@@ -167,8 +171,9 @@ comparison. A relative server requires a configured document URL or an HTTP(S)
 source URI. Variables used by a server must declare
 a finite, nonempty `enum` containing their `default`.
 
-Network authentication references, callbacks, webhooks, server behavior, and
-request/response compatibility are outside this analysis. Full input rules,
+Authorization comparison excludes network authentication references, callbacks,
+webhooks, server behavior and request/response compatibility. The separate
+`breaking` command checks the documented request/response contract profile. Input rules,
 resource limits, and the implication algorithm are described in
 [semantics](docs/semantics.md). [Example pairs](cases/README.md) include a pinned
 OpenAPI Initiative sample.

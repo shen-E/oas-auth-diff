@@ -149,8 +149,8 @@ def main():
               "scope": "endpoint-removal-and-required-parameters", "semantic_cases": len(scenarios), "input_format_pairs": len(formats), "cases": results,
               "reference_scope": {
                   "changelog": [{"id": rule["id"], "local_rule": mapped.get(rule["id"]),
-                                 "status": "profile-only" if rule["id"] in mapped else "not-implemented"} for rule in catalog],
-                  "validate": [{"id": rule["id"], "status": "not-implemented"} for rule in validate],
+                                 "status": "parameter-matrix" if rule["id"] in mapped else "outside-this-matrix"} for rule in catalog],
+                  "validate": [{"id": rule["id"], "status": "outside-this-matrix"} for rule in validate],
               },
               "total": len(results), "passed": len(results) - len(differences), "differences": differences}
     if args.output:
