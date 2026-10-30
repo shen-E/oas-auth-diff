@@ -11,6 +11,9 @@ priv enum Model {
   Any
   Never
   Rule(Constraints)
+  All(Array[Model])
+  Union(Array[Model])
+  ExactlyOne(Array[Model])
 }
 
 ///|
@@ -80,9 +83,15 @@ fn read_model(
     if ![
         "type", "enum", "properties", "required", "additionalProperties", "items",
         "nullable", "title", "description", "example", "examples", "$comment", "deprecated",
+        "allOf", "anyOf", "oneOf", "const", "$defs",
       ].contains(key) &&
       !key.has_prefix("x-") {
       raise SchemaError("Unsupported Schema keyword: " + key)
+    }
+  }
+  if fields.get("$defs") is Some(value) {
+    if legacy || !(value is Object(_)) {
+      raise SchemaError("$defs requires an OpenAPI 3.1 object")
     }
   }
   let types = match fields.get("type") {
@@ -119,7 +128,7 @@ fn read_model(
     None => ()
     _ => raise SchemaError("nullable requires an OpenAPI 3.0 boolean")
   }
-  let values = match fields.get("enum") {
+  let mut values = match fields.get("enum") {
     None => None
     Some(Array(values)) if !values.is_empty() => {
       let seen = Map([])
@@ -134,6 +143,15 @@ fn read_model(
       Some(values.map(copy_value))
     }
     _ => raise SchemaError("enum must be a nonempty array")
+  }
+  if fields.get("const") is Some(value) {
+    if legacy {
+      raise SchemaError("const requires OpenAPI 3.1")
+    }
+    values = match values {
+      None => Some([copy_value(value)])
+      Some(values) => Some(values.filter(v => identity(v) == identity(value)))
+    }
   }
   let properties = Map([])
   match fields.get("properties") {
@@ -167,7 +185,7 @@ fn read_model(
     None => Any
     Some(value) => read_model(value, legacy, depth + 1, budget)
   }
-  if types.length() == kinds.length() &&
+  let base = if types.length() == kinds.length() &&
     values is None &&
     properties.is_empty() &&
     required.is_empty() &&
@@ -177,12 +195,38 @@ fn read_model(
   } else {
     Rule({ types, values, properties, required, additional, items, })
   }
+  let mut result = base
+  for keyword in ["allOf", "anyOf", "oneOf"] {
+    if fields.get(keyword) is Some(value) {
+      let values = match value {
+        Array(values) if !values.is_empty() => values
+        _ => raise SchemaError(keyword + " must be a nonempty Schema array")
+      }
+      let children = []
+      for child in values {
+        children.push(read_model(child, legacy, depth + 1, budget))
+      }
+      let composed = match keyword {
+        "allOf" => {
+          let mut merged = Any
+          for child in children {
+            merged = intersect(merged, child, budget)
+          }
+          merged
+        }
+        "anyOf" => Union(children)
+        _ => ExactlyOne(children)
+      }
+      result = intersect(result, composed, budget)
+    }
+  }
+  result
 }
 
 ///|
 /// Parse type, enum, properties/required, additionalProperties and items.
 /// Unsupported assertions return an explicit error, including format/default,
-/// composition, numeric bounds and directional readOnly/writeOnly annotations.
+/// numeric bounds and directional readOnly/writeOnly annotations.
 pub fn parse(
   value : Json,
   openapi_30~ : Bool = false,
