@@ -53,6 +53,10 @@ and the exact `checked_rules`.
 | `request-body-became-required` | An optional body becomes required |
 | `request-body-media-type-removed` | An accepted request media type loses coverage |
 | `response-media-type-added` | A response gains a media type absent from the old contract |
+| `response-success-status-removed` | An explicitly declared 2xx status is removed |
+| `response-header-required-removed` | A guaranteed response header is removed |
+| `response-header-became-optional` | A guaranteed response header becomes optional |
+| `response-header-schema-widened` | A new header value is rejected by the previous Schema |
 
 Request comparison proves **old instances are included in new instances**;
 response comparison proves **new instances are included in old instances**.
@@ -61,6 +65,14 @@ enums with exact decimal equality, nested object properties and requiredness,
 `additionalProperties`, and array `items`. OpenAPI 3.0 `nullable` applies only
 with an explicit type; 3.1 type unions and boolean schemas are supported.
 Enum, required-name and type-array order do not change compatibility.
+`allOf` applies the intersection of its branches, `anyOf` their union, and
+`oneOf` requires exactly one matching branch, including overlap rejection.
+Positive object constraints are intersected with each branch's own
+`additionalProperties` rule. Branch order does not change semantics.
+OpenAPI 3.1 `const`, local `$defs` and assertion siblings beside Schema `$ref`
+are supported. Disjoint tagged unions can be proved using required discriminator
+properties expressed as enum/const values; the `discriminator` keyword itself
+is not interpreted.
 
 The inclusion algorithm returns a proof, a counterexample or Unknown. Each
 counterexample is checked with a separate instance evaluator. Failure to prove
@@ -70,8 +82,9 @@ produces an incomplete result.
 
 Unsupported Schema assertions produce diagnostics even when present on both
 sides. These include numeric/string/array-size bounds, patterns, formats,
-defaults, readOnly/writeOnly behavior, composition (`allOf`/`anyOf`/`oneOf`),
-discriminators, dynamic references and custom dialects. This is a bounded
+defaults, readOnly/writeOnly behavior, discriminators, dynamic references and
+custom dialects. Some infinite compositions also remain undecided within the
+proof budget. This is a bounded
 checker, not a complete JSON Schema inclusion solver.
 
 Path-level parameters are inherited; operation declarations override them by
@@ -82,17 +95,32 @@ and be required. Template parameter renames preserve matching by position.
 Parameter, body, response, Path Item and nested Schema references use the bounded,
 caller-controlled local source graph. `--local-refs`/`--ref-root` retain their
 directory confinement. Components can be renamed or inlined without changing a
-resolved Schema. Recursive Schemas, assertion siblings beside a Schema `$ref`,
-`$id` resource scopes, unavailable targets and unresolved header/link references
+resolved Schema. Recursive Schemas, assertion siblings beside a 3.0 Schema `$ref`,
+`$id` resource scopes, unavailable targets and unresolved link references
 produce diagnostics. References inside example data are not loaded. Locations
 identify the actual referenced Schema resource without invented line numbers.
 
 Media type names compare without case. Wildcards and media type parameters require
-range matching and are incomplete. Response status additions/removals, response
-headers/links, parameter serialization changes/removals, removed request bodies,
+range matching and are incomplete. Response links, parameter/header serialization
+changes, removed parameters, removed request bodies,
 and other changed document/operation fields remain unclassified. Response
 descriptions and Schema documentation edits do not create breaks. Authentication
 changes belong to `compare`; run both semantic gates in CI.
+
+Response selection uses concrete status > range (`2XX`) > `default`. Each pair
+of effective declarations is compared once across HTTP statuses 100–599, so a
+range change does not produce hundreds of duplicate results. Removing an
+explicit 2xx declaration is a break even when a range/default remains; this
+follows the reference tool's status-contract rule. Other status additions and
+non-success deletions are not breaking by themselves, while changed effective
+bodies/headers are still compared.
+
+Response headers compare without case; required defaults to false. Removing an
+optional header or adding a new header does not remove a guarantee. Schema and
+single-media content header definitions use the same response inclusion
+direction, retain reference origins and reject duplicate names. `Content-Type`
+header declarations are ignored as specified by OpenAPI. See
+[validation](validation.md) for independent official metaschema checks.
 
 ## Library
 
@@ -115,38 +143,48 @@ parser and report interfaces are unchanged.
 The reference is **oasdiff v1.35.0**, commit
 `a4ba100f880c7579765c5e63915a99bf1acc6967`. It is a test oracle with no runtime
 dependency. Its catalog has 778 changelog checks and 121 validation checks; the
-nine local IDs aggregate a smaller, explicitly described set of behaviors.
+13 local IDs aggregate a smaller, explicitly described set of behaviors.
 
 | Reference capability | Current scope |
 | --- | --- |
 | Authorization | Independent policies with verified permission witnesses |
 | General diff and summary | Entry-document values, including metadata; no reference expansion |
 | Effective parameters and endpoint matching | Requiredness, removal and path-template identity |
-| Request/response compatibility | Nine checks and the supported Schema assertions above |
+| Request/response compatibility | 13 checks and the supported Schema assertions above |
 | Consumer changelog, lifecycle/version policies | Not implemented |
-| Full validation, composition and JSON Schema dialects | Not implemented |
+| Specification validation | Bundled official entry-document metaschemas and paths cross checks; see validation scope |
+| General Schema inclusion and custom dialects | Unsupported assertions and undecided compositions remain incomplete |
 | Schema flattening/upgrade, multi-file structural diff | Not implemented |
 | Remote/Git input and upstream configuration surface | Not implemented; local loading only |
 | Reports | Local text/JSON/SARIF APIs; upstream schemas are not emulated |
 
 `compat/reference.py` checks 48 endpoint/parameter scenarios in four JSON/YAML
-combinations (192 comparisons). `compat/schema_reference.py` checks 46
-request/response scenarios in those combinations (184 comparisons): 3.0/3.1
+combinations (192 comparisons). `compat/schema_reference.py` checks 66
+request/response scenarios in those combinations (264 comparisons): 3.0/3.1
 nullability, types, enum changes, object requiredness, array items, components
-and documentation-only edits. It checks manually specified verdicts and affected
+composition and documentation-only edits. It checks manually specified verdicts and affected
 operations, and retains both tools' findings. Generic local Schema IDs aggregate
 several upstream rule IDs.
 
 The oracle uses `--flatten-params` for effective parameters and `--fail-on ERR`
-for confirmed breaks. The parameter matrix inventories the reference catalog;
+for confirmed breaks. The Schema matrix also enables `--flatten-allof` to compare
+combined constraints; without it the reference downgrades some branch edits to
+warnings. `compat/response_reference.py` adds 36 status/header scenarios in four
+format combinations (144 comparisons). `validation/reference.py` checks 32
+validation scenarios in JSON and YAML (64 comparisons), retaining upstream loader
+errors separately from parsed-document violations. These four matrices total
+664 comparisons. The parameter matrix inventories the reference catalog;
 checks outside that matrix are not implied to be covered. CI verifies the pinned
-binary checksum and uploads both result files. Independent MoonBit tests also
+binary checksum and uploads all four result files. Independent MoonBit tests also
 enumerate 16129 finite enum policy pairs and check 576 object Schema pairs against
-a separate finite-assignment evaluator.
+a separate finite-assignment evaluator, plus 2304 finite composition pairs
+against an independent bit-set truth table.
 
 ```sh
 python compat/reference.py --reference path/to/oasdiff --output parameter-results.json
 python compat/schema_reference.py --reference path/to/oasdiff --output schema-results.json
+python compat/response_reference.py --reference path/to/oasdiff --output response-results.json
+python validation/reference.py --reference path/to/oasdiff --output validation-results.json
 ```
 
 Sources: [OpenAPI 3.0 Schema](https://spec.openapis.org/oas/v3.0.4.html#schema-object),

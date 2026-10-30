@@ -31,7 +31,9 @@ pub fn render_compatibility_text(comparison : @compat.Comparison) -> String {
   let lines = [
     "oas-auth-diff: compatibility " +
     (if comparison.complete { "complete" } else { "incomplete" }),
-    "Profile: endpoint, parameter and payload Schema compatibility (9 checks)",
+    "Profile: endpoint, parameter and response contract compatibility (" +
+    @compat.checks().length().to_string() +
+    " checks)",
     "Other changed contract fields are not classified; they make analysis incomplete.",
   ]
   for finding in comparison.findings {

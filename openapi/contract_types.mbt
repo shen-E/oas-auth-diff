@@ -53,8 +53,28 @@ pub fn BodyContract::same_remainder(
 pub struct ResponseContract {
   status : String
   content : Array[MediaContract]
+  headers : Array[HeaderContract]
   location : Location
   priv remainder : String
+}
+
+///|
+/// A resolved response header; HTTP names compare without case.
+pub struct HeaderContract {
+  name : String
+  required : Bool
+  schema : SchemaContract?
+  content : Array[MediaContract]
+  location : Location
+  priv remainder : String
+}
+
+///|
+pub fn HeaderContract::same_remainder(
+  self : HeaderContract,
+  other : HeaderContract,
+) -> Bool {
+  self.remainder == other.remainder
 }
 
 ///|

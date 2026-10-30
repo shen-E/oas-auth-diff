@@ -24,14 +24,16 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.9.0\n" +
+  "oas-auth-diff 0.10.0\n" +
   "Usage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff breaking BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff diff|summary BEFORE AFTER [--format text|json]\n" +
+  "       oas-auth-diff validate SPEC [--format text|json|sarif] [--source-root DIR]\n" +
   "       oas-auth-diff checks [--format json]\n" +
   "       oas-auth-diff --help | --version\n\n" +
   "compare checks authorization; breaking checks endpoint, parameter and payload compatibility.\n" +
   "diff and summary enumerate entry-document values, including metadata; references are not expanded.\n" +
+  "validate checks the entry document against bundled official OpenAPI metaschemas; reference targets are not fetched.\n" +
   "Other changed contract fields make breaking incomplete; this is not full OpenAPI validation.\n" +
   "--local-refs loads referenced files within each entry's directory.\n" +
   "--ref-root DIR enables local references within an explicit boundary.\n" +
@@ -348,13 +350,16 @@ fn failed(
 
 ///|
 fn run(args : Array[String]) -> Int32 {
+  if args.length() > 1 && args[1] == "validate" {
+    return run_validation(args)
+  }
   match args {
     [_] | [_, "--help"] | [_, "-h"] => {
       println(usage())
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.9.0")
+      println("oas-auth-diff 0.10.0")
       return 0
     }
     [_, "checks"] => {

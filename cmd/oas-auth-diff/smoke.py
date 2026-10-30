@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.9.0" in invoke(["--version"], 0)
+    assert "0.10.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -761,7 +761,9 @@ def main():
     check_ids = invoke(["checks", "--format", "json"], 0)
     assert json.loads(check_ids) == ["endpoint-removed", "request-parameter-added-required", "request-parameter-became-required",
                                     "request-schema-narrowed", "response-schema-widened", "request-body-added-required",
-                                    "request-body-became-required", "request-body-media-type-removed", "response-media-type-added"]
+                                    "request-body-became-required", "request-body-media-type-removed", "response-media-type-added",
+                                    "response-success-status-removed", "response-header-required-removed",
+                                    "response-header-became-optional", "response-header-schema-widened"]
     assert "endpoint-removed" in invoke(["checks"], 0)
     parameter_before = cases / "parameters.before.yaml"
     parameter_after = cases / "parameters.after.json"
@@ -787,7 +789,7 @@ def main():
             new.write_text(json.dumps(changed), encoding="utf-8")
             report = invoke(["breaking", old, new], 1, format="json")
             assert report["findings"][0]["position"] == position
-        changed["paths"]["/orders"]["get"]["responses"] = {"201": {"description": "Created"}}
+        changed["paths"]["/orders"]["get"]["responses"] = {"200": {"description": "Order", "links": {"next": {"operationId": "nextPage"}}}}
         new.write_text(json.dumps(changed), encoding="utf-8")
         for output_format in ("text", "json", "sarif"):
             report = invoke(["breaking", old, new], 2, format=output_format)
@@ -870,6 +872,55 @@ def main():
             invoke([command, old, new, "--local-refs"], 2, format="json")
         new.write_text('{"openapi":"3.1.1","openapi":"3.0.3"}', encoding="utf-8")
         assert not invoke(["diff", old, new], 2, format="json")["complete"]
+
+    with tempfile.TemporaryDirectory(prefix="oas-validate-") as directory:
+        directory = Path(directory)
+        path = directory / "api.json"
+        valid = {"openapi": "3.1.1", "info": {"title": "Orders", "version": "1.0.0"},
+                 "paths": {"/orders": {"get": {"responses": {"200": {"description": "ok"}}}}}}
+        path.write_text(json.dumps(valid), encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            report = invoke(["validate", path], 0, format=output_format)
+            if output_format == "json":
+                assert report["report_kind"] == "validation" and report["valid"] and report["complete"]
+        invalid = copy.deepcopy(valid)
+        del invalid["info"]["title"]
+        path.write_text(json.dumps(invalid), encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            report = invoke(["validate", path], 1, format=output_format)
+            if output_format == "json":
+                assert report["valid"] is False and report["violations"]
+            elif output_format == "sarif":
+                assert report["runs"][0]["results"] and report["runs"][0]["invocations"][0]["executionSuccessful"]
+        report = invoke(["validate", path, "--source-root", directory], 1, format="sarif")
+        artifact = report["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert artifact == {"uri": "api.json", "uriBaseId": "%SRCROOT%"}
+        path.write_text('{"openapi":"3.1.1","openapi":"3.0.3"}', encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            invoke(["validate", path], 2, format=output_format)
+        for arguments in (["validate"], ["validate", path, "--local-refs"],
+                          ["validate", path, "--format", "json", "--format", "json"],
+                          ["validate", path, "--source-root", directory],
+                          ["validate", directory / "missing.json"]):
+            invoke(arguments, 2, format="json")
+        custom = dict(valid, jsonSchemaDialect="https://example.test/dialect")
+        path.write_text(json.dumps(custom), encoding="utf-8")
+        assert invoke(["validate", path], 2, format="json")["valid"] is None
+
+        before, after = directory / "before.json", directory / "after.json"
+        old = copy.deepcopy(valid)
+        new = copy.deepcopy(valid)
+        old["paths"]["/orders"]["get"]["responses"]["200"]["headers"] = {"X-ID": {"required": True, "schema": {"type": "integer"}}}
+        new["paths"]["/orders"]["get"]["responses"]["200"]["headers"] = {"x-id": {"required": False, "schema": {"type": "number"}}}
+        before.write_text(json.dumps(old), encoding="utf-8")
+        after.write_text(json.dumps(new), encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            report = invoke(["breaking", before, after], 1, format=output_format)
+            if output_format == "json":
+                assert {f["rule_id"] for f in report["findings"]} == {"response-header-became-optional", "response-header-schema-widened"}
+        new["paths"]["/orders"]["get"]["responses"] = {"201": {"description": "Created"}}
+        after.write_text(json.dumps(new), encoding="utf-8")
+        assert invoke(["breaking", before, after], 1, format="json")["findings"][0]["rule_id"] == "response-success-status-removed"
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

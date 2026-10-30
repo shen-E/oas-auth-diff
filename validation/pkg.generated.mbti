@@ -1,0 +1,40 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shen-E/oas-auth-diff/validation"
+
+import {
+  "moonbitlang/core/debug",
+  "shen-E/oas-auth-diff/openapi",
+}
+
+// Values
+pub fn render_json(Report) -> String
+
+pub fn render_text(Report) -> String
+
+pub fn validate(String, format~ : @openapi.InputFormat, source? : String) -> Report raise @openapi.DocumentError
+
+// Errors
+
+// Types and methods
+pub(all) struct Report {
+  source : String
+  openapi_version : String
+  metaschema : String
+  violations : Array[Violation]
+  diagnostics : Array[@openapi.Diagnostic]
+  complete : Bool
+}
+pub fn Report::exit_code(Self) -> Int32
+
+pub(all) struct Violation {
+  keyword : String
+  message : String
+  location : @openapi.Location
+  schema_pointer : String
+} derive(ToJson, @debug.Debug)
+pub fn Violation::to_json(Self) -> Json
+pub fn Violation::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

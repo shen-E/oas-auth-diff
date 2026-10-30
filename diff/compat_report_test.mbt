@@ -57,5 +57,5 @@ test "compatibility JSON and SARIF retain the profile and verified findings" {
     } => ()
     _ => fail("unexpected compatibility SARIF")
   }
-  assert_true(@diff.render_compatibility_text(comparison).contains("9 checks"))
+  assert_true(@diff.render_compatibility_text(comparison).contains("13 checks"))
 }

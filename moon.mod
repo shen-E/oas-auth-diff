@@ -1,6 +1,6 @@
 name = "shen-E/oas-auth-diff"
 
-version = "0.9.0"
+version = "0.10.0"
 
 readme = "README.md"
 
@@ -17,4 +17,5 @@ description = "OpenAPI document diffs, client contract compatibility and authori
 import {
   "moonbitstack/moonyaml@0.1.2",
   "moonbitlang/x@0.5.5",
+  "moonbitstack/moonschema@0.2.0",
 }

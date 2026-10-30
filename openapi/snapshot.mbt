@@ -7,6 +7,11 @@ pub struct Snapshot {
 }
 
 ///|
+pub fn Snapshot::to_json(self : Snapshot) -> Json {
+  value_json(self.root)
+}
+
+///|
 pub(all) struct ValueChange {
   kind : String
   pointer : String

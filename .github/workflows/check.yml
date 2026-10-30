@@ -60,7 +60,7 @@ jobs:
       - run: moon build cmd/oas-auth-diff --target native
       - name: Exercise the CLI
         run: python cmd/oas-auth-diff/smoke.py
-      - name: Compare parameter and Schema rules with oasdiff 1.35.0
+      - name: Compare OpenAPI rules with oasdiff 1.35.0
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -72,6 +72,8 @@ jobs:
           tar -xzf "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz" -C "$oracle"
           python compat/reference.py --reference "$oracle/oasdiff" --output _build/compat-reference.json
           python compat/schema_reference.py --reference "$oracle/oasdiff" --output _build/schema-reference.json
+          python compat/response_reference.py --reference "$oracle/oasdiff" --output _build/response-reference.json
+          python validation/reference.py --reference "$oracle/oasdiff" --output _build/validation-reference.json
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
@@ -79,3 +81,5 @@ jobs:
           path: |
             _build/compat-reference.json
             _build/schema-reference.json
+            _build/response-reference.json
+            _build/validation-reference.json
