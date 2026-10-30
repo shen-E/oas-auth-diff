@@ -1,0 +1,40 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shen-E/oas-auth-diff/compat"
+
+import {
+  "moonbitlang/core/debug",
+  "shen-E/oas-auth-diff/openapi",
+}
+
+// Values
+pub fn checks() -> Array[String]
+
+pub fn compare(@openapi.Specification, @openapi.Specification) -> Comparison
+
+// Errors
+
+// Types and methods
+pub(all) struct Comparison {
+  findings : Array[Finding]
+  diagnostics : Array[@openapi.Diagnostic]
+  complete : Bool
+  before_source : String
+  after_source : String
+}
+pub fn Comparison::exit_code(Self) -> Int32
+
+pub(all) struct Finding {
+  rule_id : String
+  http_method : String
+  path : String
+  parameter : String?
+  position : String?
+  message : String
+  location : @openapi.Location
+} derive(ToJson, @debug.Debug)
+pub fn Finding::to_json(Self) -> Json
+pub fn Finding::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
