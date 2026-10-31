@@ -17,6 +17,14 @@ fn Graph::schema_value(
       at,
     )
   }
+  match self.documents[at.uri].value {
+    Ok(Obj(document)) if !contract_dialect(document.get("jsonSchemaDialect")) =>
+      issue(
+        "contract.dialect", "Custom JSON Schema dialect assertions are not interpreted by the compatibility solver",
+        at,
+      )
+    _ => ()
+  }
   let fields = match value {
     Bool(_) => return (value, at)
     _ => object(value, at)
@@ -106,6 +114,18 @@ fn Graph::schema_value(
     }
   }
   (Obj(result), at)
+}
+
+///|
+fn contract_dialect(value : Value?) -> Bool {
+  match value {
+    None => true
+    Some(Str(uri)) =>
+      [
+        "https://json-schema.org/draft/2020-12/schema", "https://spec.openapis.org/oas/3.1/dialect/2024-11-10",
+      ].contains(uri)
+    _ => false
+  }
 }
 
 ///|

@@ -58,6 +58,10 @@ fn intersect(a : Model, b : Model, budget : Budget) -> Model raise SchemaError {
         required,
         additional: intersect(a.additional, b.additional, budget),
         items: intersect(a.items, b.items, budget),
+        numeric: merge_bounds(a.numeric, b.numeric),
+        length: merge_bounds(a.length, b.length),
+        size: merge_bounds(a.size, b.size),
+        count: merge_bounds(a.count, b.count),
       })
     }
     (All(children), _) => {
@@ -104,6 +108,10 @@ fn model_key(model : Model, budget : Budget) -> String raise SchemaError {
         "properties": Json::object(properties),
         "additional": model_key(rule.additional, budget),
         "items": model_key(rule.items, budget),
+        "numeric": bounds_key(rule.numeric),
+        "length": bounds_key(rule.length),
+        "size": bounds_key(rule.size),
+        "count": bounds_key(rule.count),
       }
       identity(key)
     }

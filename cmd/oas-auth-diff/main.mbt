@@ -24,21 +24,22 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.10.0\n" +
+  "oas-auth-diff 0.11.0\n" +
   "Usage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff breaking BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff diff|summary BEFORE AFTER [--format text|json]\n" +
-  "       oas-auth-diff validate SPEC [--format text|json|sarif] [--source-root DIR]\n" +
+  "       oas-auth-diff validate SPEC [--format text|json|sarif] [--local-refs] [--dialect URI=FILE]\n" +
   "       oas-auth-diff checks [--format json]\n" +
   "       oas-auth-diff --help | --version\n\n" +
   "compare checks authorization; breaking checks endpoint, parameter and payload compatibility.\n" +
   "diff and summary enumerate entry-document values, including metadata; references are not expanded.\n" +
-  "validate checks the entry document against bundled official OpenAPI metaschemas; reference targets are not fetched.\n" +
+  "validate checks OpenAPI objects and reference targets with offline metaschemas.\n" +
   "Other changed contract fields make breaking incomplete; this is not full OpenAPI validation.\n" +
   "--local-refs loads referenced files within each entry's directory.\n" +
   "--ref-root DIR enables local references within an explicit boundary.\n" +
   "--before-document-url URL and --after-document-url URL configure deployment context for compare only.\n" +
   "--source-root DIR makes SARIF paths relative to a source root; requires --format sarif.\n" +
+  "--dialect URI=FILE supplies a 2020-12 dialect metaschema for validate; the option can repeat.\n" +
   "No network requests are made during analysis.\n" +
   "Exit codes: 0 complete/no finding in the selected profile; 1 confirmed finding; 2 error/incomplete."
 }
@@ -359,7 +360,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.10.0")
+      println("oas-auth-diff 0.11.0")
       return 0
     }
     [_, "checks"] => {

@@ -24,6 +24,10 @@ priv struct Constraints {
   required : Array[String]
   additional : Model
   items : Model
+  numeric : Bounds
+  length : Bounds
+  size : Bounds
+  count : Bounds
 }
 
 ///|
@@ -83,10 +87,21 @@ fn read_model(
     if ![
         "type", "enum", "properties", "required", "additionalProperties", "items",
         "nullable", "title", "description", "example", "examples", "$comment", "deprecated",
-        "allOf", "anyOf", "oneOf", "const", "$defs",
+        "allOf", "anyOf", "oneOf", "const", "$defs", "minimum", "maximum", "exclusiveMinimum",
+        "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties",
+        "maxProperties", "$schema",
       ].contains(key) &&
       !key.has_prefix("x-") {
       raise SchemaError("Unsupported Schema keyword: " + key)
+    }
+  }
+  if fields.get("$schema") is Some(value) {
+    match value {
+      String(uri) if !legacy &&
+        [
+          "https://json-schema.org/draft/2020-12/schema", "https://spec.openapis.org/oas/3.1/dialect/2024-11-10",
+        ].contains(uri) => ()
+      _ => raise SchemaError("Unsupported Schema dialect")
     }
   }
   if fields.get("$defs") is Some(value) {
@@ -185,15 +200,34 @@ fn read_model(
     None => Any
     Some(value) => read_model(value, legacy, depth + 1, budget)
   }
+  let numeric = read_numeric(fields, legacy)
+  let length = read_size(fields, "minLength", "maxLength")
+  let size = read_size(fields, "minItems", "maxItems")
+  let count = read_size(fields, "minProperties", "maxProperties")
   let base = if types.length() == kinds.length() &&
     values is None &&
     properties.is_empty() &&
     required.is_empty() &&
     additional is Any &&
-    items is Any {
+    items is Any &&
+    bounds_empty(numeric) &&
+    bounds_empty(length) &&
+    bounds_empty(size) &&
+    bounds_empty(count) {
     Any
   } else {
-    Rule({ types, values, properties, required, additional, items, })
+    Rule({
+      types,
+      values,
+      properties,
+      required,
+      additional,
+      items,
+      numeric,
+      length,
+      size,
+      count,
+    })
   }
   let mut result = base
   for keyword in ["allOf", "anyOf", "oneOf"] {
@@ -224,9 +258,9 @@ fn read_model(
 }
 
 ///|
-/// Parse type, enum, properties/required, additionalProperties and items.
+/// Parse positive compositions, type/enum, object/item and numeric/size assertions.
 /// Unsupported assertions return an explicit error, including format/default,
-/// numeric bounds and directional readOnly/writeOnly annotations.
+/// multipleOf and directional readOnly/writeOnly annotations.
 pub fn parse(
   value : Json,
   openapi_30~ : Bool = false,
@@ -263,7 +297,11 @@ fn validate_value(
       let parsed = @json.parse(value.stringify()) catch {
         _ => raise SchemaError("Invalid numeric representation")
       }
-      if !(parsed is Number(_)) {
+      if parsed is Number(n, ..) {
+        if n != n || n > 1.7976931348623157e308 || n < -1.7976931348623157e308 {
+          raise SchemaError("Non-finite numeric representation")
+        }
+      } else {
         raise SchemaError("Expected a numeric representation")
       }
     }

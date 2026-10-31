@@ -11,7 +11,7 @@ pub fn render_json(Report) -> String
 
 pub fn render_text(Report) -> String
 
-pub fn validate(String, format~ : @openapi.InputFormat, source? : String) -> Report raise @openapi.DocumentError
+pub fn validate(String, format~ : @openapi.InputFormat, source? : String, load? : ((String, String) -> @openapi.SourceDocument raise @openapi.DocumentError)?, dialects? : Map[String, Json]) -> Report raise @openapi.DocumentError
 
 // Errors
 

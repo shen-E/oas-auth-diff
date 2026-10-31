@@ -52,6 +52,31 @@ def cases():
             changed = copy.deepcopy(base)
             changed["paths"]["/orders"]["get"]["responses"]["200"]["content"] = {"application/json": {"schema": schema}}
             yield version + "/" + label, changed, expected
+        for name, kind, target, expected in (
+            ("schema-ref-valid", "schemas", {"type": "string"}, 0),
+            ("schema-ref-bad-type", "schemas", {"type": 9}, 1),
+            ("parameter-ref-valid", "parameters", {"name": "q", "in": "query", "schema": {"type": "string"}}, 0),
+            ("parameter-ref-bad-target", "parameters", {"description": "wrong target"}, 1),
+            ("response-ref-valid", "responses", {"description": "ok"}, 0),
+            ("response-ref-bad-target", "responses", {"content": {}}, 1),
+            ("header-ref-valid", "headers", {"schema": {"type": "string"}}, 0),
+            ("header-ref-bad-schema", "headers", {"schema": {"type": 9}}, 1),
+        ):
+            changed = copy.deepcopy(base)
+            # Use the definitions at operation sites so both tools load targets.
+            changed["x-target"] = target
+            ref = {"$ref": "#/x-target"}
+            operation = changed["paths"]["/orders"]["get"]
+            if kind == "schemas":
+                operation["responses"]["200"]["content"] = {"application/json": {"schema": ref}}
+            elif kind == "parameters": operation["parameters"] = [ref]
+            elif kind == "responses": operation["responses"]["200"] = ref
+            else: operation["responses"]["200"]["headers"] = {"X-ID": ref}
+            yield version + "/" + name, changed, expected
+        recursive = copy.deepcopy(base)
+        recursive["components"] = {"schemas": {"Node": {"type": "object", "properties": {"next": {"$ref": "#/components/schemas/Node"}}}}}
+        recursive["paths"]["/orders"]["get"]["responses"]["200"]["content"] = {"application/json": {"schema": {"$ref": "#/components/schemas/Node"}}}
+        yield version + "/recursive-schema", recursive, 0
 
 
 def main():

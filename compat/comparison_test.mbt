@@ -51,8 +51,8 @@ test "unclassified changes retain confirmed findings and return incomplete" {
 test "parameter schemas and removals are not silently classified" {
   assert_eq(
     @compat.compare(
-      spec("[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"minimum\":1}}]"),
-      spec("[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"minimum\":2}}]"),
+      spec("[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"multipleOf\":1}}]"),
+      spec("[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"multipleOf\":2}}]"),
     ).exit_code(),
     2,
   )

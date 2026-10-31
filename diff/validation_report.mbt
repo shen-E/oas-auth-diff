@@ -10,8 +10,10 @@ pub fn render_validation_sarif(
     rules[rule] = true
     let source = match source_root {
       Some(root) =>
-        sarif_relative_uri(report.source, root).unwrap_or(report.source)
-      None => report.source
+        sarif_relative_uri(violation.location.uri, root).unwrap_or(
+          violation.location.uri,
+        )
+      None => violation.location.uri
     }
     let key : Json = [
       "oas-auth-diff/validation/v1",
@@ -76,7 +78,9 @@ pub fn render_validation_sarif(
       "properties",
       {
         "report_kind": "validation",
-        "scope": "official-entry-document-metaschema",
+        "scope": "official-document-and-reference-targets",
+        "reference_targets_checked": report.complete,
+        "format_assertions": false,
         "metaschema": report.metaschema,
       },
     ),

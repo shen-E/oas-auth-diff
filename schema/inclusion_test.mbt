@@ -97,7 +97,7 @@ test "unsupported assertions and malformed declarations return typed errors" {
   let invalid : Array[Json] = [
     { "allOf": [] },
     { "format": "uuid" },
-    { "minimum": 1 },
+    { "multipleOf": 1 },
     { "readOnly": true },
     { "type": ["string", "string"] },
     { "enum": [1, 1.0] },

@@ -74,6 +74,11 @@ jobs:
           python compat/schema_reference.py --reference "$oracle/oasdiff" --output _build/schema-reference.json
           python compat/response_reference.py --reference "$oracle/oasdiff" --output _build/response-reference.json
           python validation/reference.py --reference "$oracle/oasdiff" --output _build/validation-reference.json
+      - name: Verify Schema witnesses with an independent validator
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install jsonschema==4.25.1
+          python compat/witness_reference.py --output _build/witness-reference.json
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
@@ -83,3 +88,4 @@ jobs:
             _build/schema-reference.json
             _build/response-reference.json
             _build/validation-reference.json
+            _build/witness-reference.json

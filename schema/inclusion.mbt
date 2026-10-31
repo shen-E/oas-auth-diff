@@ -100,7 +100,23 @@ fn implies(a : Model, b : Model, budget : Budget) -> Bool raise SchemaError {
       if a.types.any(t => !b.types.contains(t)) || b.values is Some(_) {
         return false
       }
+      if a.types.contains("number") && !bounds_imply(a.numeric, b.numeric) {
+        return false
+      }
+      if a.types.contains("integer") &&
+        !bounds_imply(integer_bounds(a.numeric), integer_bounds(b.numeric)) {
+        return false
+      }
+      if a.types.contains("string") && !bounds_imply(a.length, b.length) {
+        return false
+      }
+      if a.types.contains("array") && !bounds_imply(a.size, b.size) {
+        return false
+      }
       if a.types.contains("object") {
+        if !bounds_imply(a.count, b.count) {
+          return false
+        }
         if b.required.any(k => !a.required.contains(k)) {
           return false
         }
@@ -158,32 +174,20 @@ fn sample(model : Model, budget : Budget) -> Json? raise SchemaError {
       }
       for kind in rule.types {
         let value = match kind {
-          "object" => {
-            let fields = Map([])
-            let mut valid = true
-            for key in rule.required {
-              match
-                sample(
-                  rule.properties.get(key).unwrap_or(rule.additional),
-                  budget,
-                ) {
-                Some(value) => fields[key] = value
-                None => valid = false
+          "object" | "array" | "string" | "integer" | "number" => {
+            for value in scalar_samples(rule, kind, budget) {
+              if accepts_model(model, value, budget) {
+                return Some(value)
               }
             }
-            if !valid {
-              continue
-            }
-            Json::object(fields)
+            continue
           }
-          "array" => Json::array([])
-          "integer" => Json::number(0)
-          "number" => Json::number(0.5)
-          "string" => Json::string("")
           "boolean" => Json::boolean(false)
           _ => Json::null()
         }
-        return Some(value)
+        if accepts_model(model, value, budget) {
+          return Some(value)
+        }
       }
       None
     }
@@ -202,6 +206,10 @@ fn constraints(model : Model) -> Constraints {
         required: [],
         additional: Any,
         items: Any,
+        numeric: empty_bounds(),
+        length: empty_bounds(),
+        size: empty_bounds(),
+        count: empty_bounds(),
       }
     Never =>
       {
@@ -211,6 +219,10 @@ fn constraints(model : Model) -> Constraints {
         required: [],
         additional: Never,
         items: Never,
+        numeric: empty_bounds(),
+        length: empty_bounds(),
+        size: empty_bounds(),
+        count: empty_bounds(),
       }
   }
 }
@@ -252,6 +264,17 @@ fn counterexample(
   }
   let left = constraints(a)
   let right = constraints(b)
+  candidates.append(numeric_candidates(left.numeric))
+  candidates.append(numeric_candidates(right.numeric))
+  for kind in ["string", "array", "object"] {
+    candidates.append(scalar_samples(left, kind, budget))
+    let mixed = match kind {
+      "string" => { ..left, length: right.length, }
+      "array" => { ..left, size: right.size, }
+      _ => { ..left, count: right.count, }
+    }
+    candidates.append(scalar_samples(mixed, kind, budget))
+  }
   if left.values is Some(values) {
     candidates.append(values)
   }
@@ -315,7 +338,11 @@ fn counterexample(
   }
   if left.types.contains("array") && !(left.items is Any && right.items is Any) {
     if counterexample(left.items, right.items, budget) is Some(value) {
-      candidates.push(Json::array([value]))
+      for size in size_candidates(left.size) {
+        if size > 0 {
+          candidates.push(Json::array(Array::make(size, value)))
+        }
+      }
     }
   }
   for value in candidates {

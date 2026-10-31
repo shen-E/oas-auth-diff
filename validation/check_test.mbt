@@ -10,6 +10,22 @@ fn document(version : String) -> Json {
 }
 
 ///|
+test "size syntax checks retain tiny decimals that the metaschema engine rounds" {
+  for version in ["3.0.3", "3.1.1"] {
+    for token in ["-1e-400", "1e-400", "1.00000000000000000001"] {
+      let text = "{\"openapi\":\"" +
+        version +
+        "\",\"info\":{\"title\":\"Sizes\",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{\"Data\":{\"minLength\":" +
+        token +
+        "}}}}"
+      let result = @validation.validate(text, format=@openapi.Json)
+      assert_eq(result.exit_code(), 1)
+      assert_true(result.violations.any(v => v.keyword == "schemaConstraints"))
+    }
+  }
+}
+
+///|
 test "official metaschemas accept OpenAPI 3.0 and 3.1 JSON/YAML documents" {
   for version in ["3.0.3", "3.1.1"] {
     let report = @validation.validate(

@@ -1,0 +1,9 @@
+{
+  "$id": "https://example.test/sensitivity",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$dynamicAnchor": "meta",
+  "$ref": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "x-sensitivity": {"enum": ["public", "private"]}
+  }
+}

@@ -8,8 +8,8 @@ permission set that the new version accepts and the old version rejects.
 compatibility, with concrete data witnesses for Schema breaks. See
 [compatibility scope](docs/compatibility.md) for the 13 checks, supported Schema
 assertions, unresolved fields and the pinned oasdiff v1.35.0 reference.
-`validate` checks an entry document against bundled official OpenAPI metaschemas
-and paths cross checks. See [validation](docs/validation.md) for supported dialects,
+`validate` checks OpenAPI objects and reference targets against offline
+metaschemas, with paths cross checks and explicit dialect registration. See [validation](docs/validation.md) for supported dialects,
 reference handling and the pinned MoonBit validation dependency.
 
 For example, changing an operation from requiring `orders:read` **and**
@@ -81,7 +81,7 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.10.0 package is prepared for release; it has not been uploaded to
+The v0.11.0 package is prepared for release; it has not been uploaded to
 Mooncakes. Until publication, place the consumer module and this checkout in
 a separate parent directory, then create a workspace there:
 
@@ -89,10 +89,10 @@ a separate parent directory, then create a workspace there:
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.10.0` in `consumer/moon.mod`; the workspace resolves
+Declare `shen-E/oas-auth-diff@0.11.0` in `consumer/moon.mod`; the workspace resolves
 it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.10.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.10.0`.
+`shen-E/oas-auth-diff@0.11.0` and the CLI package will be
+`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.11.0`.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`

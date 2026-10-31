@@ -30,6 +30,30 @@ fn body_spec(
 }
 
 ///|
+test "custom global dialects withdraw Schema conclusions even when unchanged" {
+  let original = body_spec({ "type": "integer", "minimum": 1 }).to_json()
+  let fields = match original {
+    Object(fields) => fields
+    _ => fail("expected object")
+  }
+  fields["jsonSchemaDialect"] = Json::string("https://example.test/custom")
+  let custom = @openapi.parse_specification(
+    Json::object(fields).stringify(),
+    format=@openapi.Json,
+  )
+  let comparison = @compat.compare(custom, custom)
+  assert_eq(comparison.exit_code(), 2)
+  assert_true(comparison.findings.is_empty())
+  assert_true(comparison.diagnostics.any(d => d.code == "contract.dialect"))
+  let supported = body_spec({
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "integer",
+    "minimum": 1,
+  })
+  assert_eq(@compat.compare(supported, supported).exit_code(), 0)
+}
+
+///|
 test "the same enum change narrows requests but widens responses in reverse" {
   let wide : Json = { "type": "string", "enum": ["read", "write"] }
   let narrow : Json = { "type": "string", "enum": ["read"] }
@@ -112,8 +136,8 @@ test "annotations and set ordering preserve compatibility but unknown assertions
   )
   assert_eq(
     @compat.compare(
-      body_spec({ "type": "integer", "minimum": 1 }),
-      body_spec({ "type": "integer", "minimum": 2 }),
+      body_spec({ "type": "integer", "multipleOf": 1 }),
+      body_spec({ "type": "integer", "multipleOf": 2 }),
     ).exit_code(),
     2,
   )
