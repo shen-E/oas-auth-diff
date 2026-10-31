@@ -95,8 +95,8 @@ still be evaluated and compared exactly. If no bounded witness or inclusion proo
 is available, the result is incomplete.
 
 Unsupported Schema assertions produce diagnostics even when present on both
-sides. These include `multipleOf`, patterns, formats,
-defaults, readOnly/writeOnly behavior, discriminators, dynamic references and
+sides. These include `multipleOf`, patterns outside the profile below,
+defaults, discriminators, dynamic references and
 custom dialects. Some infinite compositions also remain undecided within the
 proof budget. This is a bounded
 checker, not a complete JSON Schema inclusion solver.
@@ -104,6 +104,56 @@ The standard 2020-12 and bundled OpenAPI dialects can be declared explicitly.
 Supplying a custom dialect to `validate` checks Schema syntax; it does not teach
 the compatibility solver new assertion semantics. A custom global dialect makes
 `breaking` incomplete even when the declaration is unchanged.
+
+### String patterns
+
+`pattern` uses unanchored ECMAScript search semantics. The bounded regular
+profile supports ASCII literals, positive character classes/ranges, `\d`, `\w`,
+ASCII hexadecimal/Unicode escapes, escaped metacharacters and control characters,
+capturing/noncapturing groups, alternation, `?`/`*`/`+`, counted repetitions and
+`^`/`$` assertions. Lazy repetitions have the same accepted language. Character
+atoms are ASCII; unanchored prefixes/suffixes can contain any Unicode scalar.
+`$` follows ECMAScript's default end-of-input semantics, including newline cases.
+
+Thompson NFAs feed a bounded product search for language inclusion, intersection
+and counterexamples. `allOf` patterns are conjoined; equivalent spellings can be
+proved equivalent. Length assertions participate in the product when their
+bounds are at most 128; larger bounds can still be proved through separate
+length and language implications. The instance evaluator checks every witness.
+Limits are 512 pattern characters, grouping depth 32, repetition counts 64,
+256 NFA states per pattern and 4096 product states, within the Schema step budget.
+Dots, negated classes, Unicode character atoms/classes, lookaround, backreferences
+and inline flags remain incomplete. No backtracking engine runs on input data.
+
+### Directional requiredness and formats
+
+`breaking` explicitly uses a directional-requiredness profile: a `readOnly: true`
+property is optional in requests, and a `writeOnly: true` property is optional
+in responses. Properties remain in the Schema, so values supplied in those
+positions still obey their types, patterns and other assertions. These flags do
+not ban a field or remove other constraints. Unconditional annotations and
+required names can reside in different `allOf` branches. Branch-dependent
+visibility in `anyOf`/`oneOf` stays incomplete.
+
+OpenAPI 3.0 specifies directional requiredness. In 3.1 these keywords are
+annotations and applications can choose extended validation; this tool's 3.1
+projection is an explicit application profile, not a claim that every server
+relaxes `required`. Use `schema.parse(..., direction=Request|Response)` for the
+same profile in library code. The default `Neutral` preserves JSON Schema
+requiredness. OpenAPI 3.0 rejects simultaneous true flags; `validate` also checks
+that prose constraint.
+
+`format` must be a string and is nonassertive in the instance solver. Unchanged
+formats, including `uuid`, `date-time` and `int64`, no longer block comparison.
+They do not impose a UUID/calendar/integer-range assertion. A changed, added or
+removed format in a compared Schema produces `compat.format` and exit 2 because
+serialization and generated-client behavior need an application policy. Confirmed
+instance findings survive alongside that diagnostic. JSON and SARIF expose
+`schema_semantics`; text reports name this profile. Format assertions and the
+required format-assertion vocabulary remain unsupported.
+Unconditional `allOf` branches collect format labels as a set at each instance
+position, so branch reordering and description siblings on references preserve
+unchanged labels. Collection stops after 20000 visited Schema nodes per pair.
 
 Path-level parameters are inherited; operation declarations override them by
 `(in, name)`. Header names compare without case and reserved header parameters
@@ -204,17 +254,38 @@ binary checksum and uploads the four comparison matrices and independent witness
 enumerate 16129 finite enum policy pairs and check 576 object Schema pairs against
 a separate finite-assignment evaluator, plus 2304 finite composition pairs
 against an independent bit-set truth table and 225 small integer interval pairs.
+An additional 64 finite pattern-language pairs use an explicit finite-set oracle.
+`schema/pattern_reference.mjs` generates a 38-pattern × 400-word evaluation table
+with ECMAScript `RegExp`; MoonBit checks all 15200 decisions on each backend.
+The corpus includes anchors, final newlines, empty languages, nullable loops,
+escapes, ranges and Unicode text around ASCII matches. CI regenerates and checks
+the committed table.
+
+`compat/string_reference.py` adds 56 string/direction/format cases in four input
+combinations (224 comparisons). The five matrices total 1212 comparisons, with
+100 explicitly asserted exit-code differences, including the eight above.
+In the added matrix, the pinned default breaking profile has no findings for
+the pattern fixtures. Its 3.1 request requiredness and format policies also differ
+from this profile. Outputs and fixed expected exits from both tools are retained.
+Passing this matrix means those behaviors were verified, not identical verdicts.
+
 `compat/witness_reference.py` uses Python `jsonschema==4.25.1` independently to
-check all 64 emitted witnesses across the 138 Schema cases. JSON numbers in
-witnesses are parsed as Decimal, and 3.0 nullable types are adapted explicitly.
+check all 78 emitted witnesses across 194 Schema cases, including the new matrix.
+JSON numbers are parsed as Decimal. The adapter explicitly handles 3.0 nullable
+types and unconditional directional requiredness in these fixtures. The separate
+ECMAScript table checks pattern engine semantics, including cases where host
+regular-expression dialects differ.
 
 ```sh
 python compat/reference.py --reference path/to/oasdiff --output parameter-results.json
 python compat/schema_reference.py --reference path/to/oasdiff --output schema-results.json
+python compat/string_reference.py --reference path/to/oasdiff --output string-results.json
 python compat/response_reference.py --reference path/to/oasdiff --output response-results.json
 python validation/reference.py --reference path/to/oasdiff --output validation-results.json
 python -m pip install jsonschema==4.25.1
 python compat/witness_reference.py --output witness-results.json
+node schema/pattern_reference.mjs
+moon fmt
 ```
 
 Sources: [OpenAPI 3.0 Schema](https://spec.openapis.org/oas/v3.0.4.html#schema-object),

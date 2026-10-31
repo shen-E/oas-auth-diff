@@ -62,6 +62,15 @@ fn intersect(a : Model, b : Model, budget : Budget) -> Model raise SchemaError {
         length: merge_bounds(a.length, b.length),
         size: merge_bounds(a.size, b.size),
         count: merge_bounds(a.count, b.count),
+        patterns: {
+          let patterns = a.patterns.copy()
+          for p in b.patterns {
+            if !patterns.any(q => p.text == q.text) {
+              patterns.push(p)
+            }
+          }
+          patterns
+        },
       })
     }
     (All(children), _) => {
@@ -112,6 +121,11 @@ fn model_key(model : Model, budget : Budget) -> String raise SchemaError {
         "length": bounds_key(rule.length),
         "size": bounds_key(rule.size),
         "count": bounds_key(rule.count),
+        "patterns": {
+          let texts = rule.patterns.map(p => p.text)
+          texts.sort()
+          Json(texts)
+        },
       }
       identity(key)
     }

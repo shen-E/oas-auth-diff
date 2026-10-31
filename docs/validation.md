@@ -15,6 +15,10 @@ path-template parameters on literal `paths` operations. It reports syntax
 violations independently of the assertions the compatibility solver can prove.
 For example, a valid `pattern` declaration can pass validation while `breaking`
 cannot classify its change.
+The OpenAPI 3.0 check also rejects simultaneous `readOnly: true` and
+`writeOnly: true`. Those keywords are annotations in 3.1; the compatibility
+command's directional-requiredness profile is described in
+[compatibility](compatibility.md#directional-requiredness-and-formats).
 
 | Exit | Meaning |
 | --- | --- |

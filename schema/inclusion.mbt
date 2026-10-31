@@ -107,7 +107,8 @@ fn implies(a : Model, b : Model, budget : Budget) -> Bool raise SchemaError {
         !bounds_imply(integer_bounds(a.numeric), integer_bounds(b.numeric)) {
         return false
       }
-      if a.types.contains("string") && !bounds_imply(a.length, b.length) {
+      if a.types.contains("string") &&
+        !(string_relation(a, b, budget) is Covered) {
         return false
       }
       if a.types.contains("array") && !bounds_imply(a.size, b.size) {
@@ -210,6 +211,7 @@ fn constraints(model : Model) -> Constraints {
         length: empty_bounds(),
         size: empty_bounds(),
         count: empty_bounds(),
+        patterns: [],
       }
     Never =>
       {
@@ -223,6 +225,7 @@ fn constraints(model : Model) -> Constraints {
         length: empty_bounds(),
         size: empty_bounds(),
         count: empty_bounds(),
+        patterns: [],
       }
   }
 }
@@ -264,6 +267,10 @@ fn counterexample(
   }
   let left = constraints(a)
   let right = constraints(b)
+  if left.types.contains("string") &&
+    string_relation(left, right, budget) is Different(text) {
+    candidates.push(Json::string(text))
+  }
   candidates.append(numeric_candidates(left.numeric))
   candidates.append(numeric_candidates(right.numeric))
   for kind in ["string", "array", "object"] {

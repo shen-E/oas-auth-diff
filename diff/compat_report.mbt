@@ -1,4 +1,14 @@
 ///|
+fn schema_semantics() -> Json {
+  {
+    "direction": "readOnly/writeOnly-directional-requiredness",
+    "present_properties": "constraints-retained",
+    "format": "annotation; changed annotations make comparison incomplete",
+    "pattern": "bounded-ascii-regular-language",
+  }
+}
+
+///|
 /// Render the declared contract compatibility profile as JSON.
 pub fn render_compatibility_json(comparison : @compat.Comparison) -> String {
   let report : Json = {
@@ -6,6 +16,7 @@ pub fn render_compatibility_json(comparison : @compat.Comparison) -> String {
     "report_kind": "compatibility",
     "scope": "endpoint-parameter-and-payload-schema",
     "checked_rules": Json(@compat.checks()),
+    "schema_semantics": schema_semantics(),
     "complete": comparison.complete,
     "exit_code": comparison.exit_code(),
     "document_sources": {
@@ -35,6 +46,7 @@ pub fn render_compatibility_text(comparison : @compat.Comparison) -> String {
     @compat.checks().length().to_string() +
     " checks)",
     "Other changed contract fields are not classified; they make analysis incomplete.",
+    "Schema: directional requiredness; present values stay constrained; formats annotate and changed formats require review.",
   ]
   for finding in comparison.findings {
     lines.push(
@@ -142,6 +154,7 @@ pub fn render_compatibility_sarif(
         "report_kind": "compatibility",
         "scope": "endpoint-parameter-and-payload-schema",
         "checked_rules": Json(@compat.checks()),
+        "schema_semantics": schema_semantics(),
       },
     ),
   ])

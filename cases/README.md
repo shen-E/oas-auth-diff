@@ -1,5 +1,18 @@
 # Example pairs
 
+`account.before.yaml` and `account.after.json` share a component between request
+and response. Removing `id.readOnly` makes the request's `id` required; adding
+`token.writeOnly` lets the response omit `token`. The name pattern also narrows
+from lowercase letters to `a`–`f`. The directional-requiredness profile reports
+request and response witnesses, while retaining constraints on present fields:
+
+```sh
+oas-auth-diff breaking cases/account.before.yaml cases/account.after.json --format json
+```
+
+The unchanged `int64` format is an annotation in this profile, so it does not
+impose an integer range. A format label change would make comparison incomplete.
+
 `bounds.before.yaml` accepts export requests with a limit up to 100, labels up to
 80 characters and up to 20 field names. `bounds.after.json` tightens each request
 limit and widens the integer response from 100 to 200. `breaking` returns exit 1

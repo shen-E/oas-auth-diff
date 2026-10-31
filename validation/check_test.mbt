@@ -10,6 +10,21 @@ fn document(version : String) -> Json {
 }
 
 ///|
+test "OpenAPI 3.0 rejects simultaneous read-only and write-only annotations" {
+  let source = "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Visibility\",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{\"Id\":{\"readOnly\":true,\"writeOnly\":true}}}}"
+  let report = @validation.validate(source, format=@openapi.Json)
+  assert_eq(report.exit_code(), 1)
+  assert_true(report.violations.any(v => v.keyword == "readOnly/writeOnly"))
+  assert_eq(
+    @validation.validate(
+      source.replace_all(old="3.0.3", new="3.1.1"),
+      format=@openapi.Json,
+    ).exit_code(),
+    0,
+  )
+}
+
+///|
 test "size syntax checks retain tiny decimals that the metaschema engine rounds" {
   for version in ["3.0.3", "3.1.1"] {
     for token in ["-1e-400", "1e-400", "1.00000000000000000001"] {

@@ -25,6 +25,12 @@ jobs:
           "$HOME/.moon/bin/moon" update
       - run: moon version --all
       - run: moon check --target all
+      - name: Regenerate the ECMAScript pattern oracle
+        run: |
+          node --version
+          node schema/pattern_reference.mjs
+          moon fmt
+          git diff --exit-code -- schema/pattern_oracle_test.mbt
       - run: moon test --target all
       - run: moon fmt --check
 
@@ -72,6 +78,7 @@ jobs:
           tar -xzf "$oracle/oasdiff_1.35.0_linux_amd64.tar.gz" -C "$oracle"
           python compat/reference.py --reference "$oracle/oasdiff" --output _build/compat-reference.json
           python compat/schema_reference.py --reference "$oracle/oasdiff" --output _build/schema-reference.json
+          python compat/string_reference.py --reference "$oracle/oasdiff" --output _build/string-reference.json
           python compat/response_reference.py --reference "$oracle/oasdiff" --output _build/response-reference.json
           python validation/reference.py --reference "$oracle/oasdiff" --output _build/validation-reference.json
       - name: Verify Schema witnesses with an independent validator
@@ -86,6 +93,7 @@ jobs:
           path: |
             _build/compat-reference.json
             _build/schema-reference.json
+            _build/string-reference.json
             _build/response-reference.json
             _build/validation-reference.json
             _build/witness-reference.json

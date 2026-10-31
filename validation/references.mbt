@@ -246,6 +246,24 @@ fn Walk::visit(
     self.check(value, at, kind, dialect)
   }
   if value is Object(fields) {
+    if kind == "schema" &&
+      self.legacy &&
+      fields.get("readOnly") == Some(Json::boolean(true)) &&
+      fields.get("writeOnly") == Some(Json::boolean(true)) {
+      if self.violations.length() < 1000 {
+        self.violations.push({
+          keyword: "readOnly/writeOnly",
+          message: "OpenAPI 3.0 forbids readOnly and writeOnly together",
+          location: at,
+          schema_pointer: "",
+        })
+      } else {
+        self.diagnostic(
+          "resource.validation-results", "Validation exceeds 1000 reported violations",
+          at,
+        )
+      }
+    }
     if self.legacy && kind == "schema" && !fields.contains("$ref") {
       self.check_bounds(value, at, kind, dialect)
     }

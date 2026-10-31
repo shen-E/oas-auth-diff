@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.11.0" in invoke(["--version"], 0)
+    assert "0.12.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -852,6 +852,34 @@ def main():
         null_witness = invoke(["breaking", old, new], 1, format="json")["findings"][0]
         assert null_witness["witness"] is None and null_witness["witness_verified"]
 
+        old.write_text(json.dumps(payload({"type": "string", "pattern": "^[a-z]+$", "format": "uuid"})), encoding="utf-8")
+        new.write_text(json.dumps(payload({"type": "string", "pattern": "^[a-f]+$", "format": "uuid"})), encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            report = invoke(["breaking", old, new], 1, format=output_format)
+            if output_format == "json":
+                assert report["findings"][0]["witness_verified"] and report["schema_semantics"]["present_properties"] == "constraints-retained"
+            elif output_format == "sarif":
+                assert "schema_semantics" in report["runs"][0]["properties"]
+        invoke(["breaking", new, old], 0, format="json")
+        candidate = payload({"type": "string", "pattern": "^[a-f]+$", "format": "email"})
+        new.write_text(json.dumps(candidate), encoding="utf-8")
+        for output_format in ("json", "sarif"):
+            report = invoke(["breaking", old, new], 2, format=output_format)
+            if output_format == "json":
+                assert report["findings"] and any(d["code"] == "compat.format" for d in report["diagnostics"])
+            else:
+                assert report["runs"][0]["results"] and not report["runs"][0]["invocations"][0]["executionSuccessful"]
+        ordinary = {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}}
+        read = dict(ordinary, properties={"id": {"type": "integer", "readOnly": True}})
+        old.write_text(json.dumps(payload(read)), encoding="utf-8")
+        new.write_text(json.dumps(payload(ordinary)), encoding="utf-8")
+        assert invoke(["breaking", old, new], 1, format="json")["findings"][0]["witness"] == {}
+        invoke(["breaking", new, old], 0, format="json")
+        write = dict(ordinary, properties={"id": {"type": "integer", "writeOnly": True}})
+        old.write_text(json.dumps(payload(ordinary, True)), encoding="utf-8")
+        new.write_text(json.dumps(payload(write, True)), encoding="utf-8")
+        assert invoke(["breaking", old, new], 1, format="json")["findings"][0]["witness"] == {}
+
         for wide, narrow in (({"type": "number", "minimum": 1}, {"type": "number", "minimum": 2}),
                              ({"type": "string", "maxLength": 8}, {"type": "string", "maxLength": 3}),
                              ({"type": "array", "items": {}, "minItems": 1}, {"type": "array", "items": {}, "minItems": 3})):
@@ -859,8 +887,8 @@ def main():
             new.write_text(json.dumps(payload(narrow)), encoding="utf-8")
             assert invoke(["breaking", old, new], 1, format="json")["findings"][0]["witness_verified"]
             invoke(["breaking", new, old], 0, format="json")
-        baseline = payload({"type": "string", "pattern": "^a"})
-        candidate = payload({"type": "string", "pattern": "^b"})
+        baseline = payload({"type": "string", "pattern": "^(?=a)a"})
+        candidate = payload({"type": "string", "pattern": "^(?=b)b"})
         candidate["paths"]["/orders"]["post"]["parameters"] = [{"name": "tenant", "in": "query", "required": True}]
         old.write_text(json.dumps(baseline), encoding="utf-8")
         new.write_text(json.dumps(candidate), encoding="utf-8")
