@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.12.0" in invoke(["--version"], 0)
+    assert "0.13.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -982,6 +982,25 @@ def main():
         new["paths"]["/orders"]["get"]["responses"] = {"201": {"description": "Created"}}
         after.write_text(json.dumps(new), encoding="utf-8")
         assert invoke(["breaking", before, after], 1, format="json")["findings"][0]["rule_id"] == "response-success-status-removed"
+
+    for output_format in ("text", "json", "sarif"):
+        anchored = invoke(["breaking", cases / "labels.before.yaml", cases / "labels.after.json"], 1, format=output_format)
+        if output_format == "json":
+            assert anchored["complete"] and anchored["findings"][0]["witness_verified"]
+            assert anchored["findings"][0]["location"]["pointer"] == "/components/schemas/Label"
+            assert anchored["schema_semantics"]["pattern"] == "bounded-bmp-positive-regular-language"
+        invoke(["validate", cases / "labels.before.yaml"], 0, format=output_format)
+    invoke(["breaking", cases / "labels.after.json", cases / "labels.before.yaml"], 0, format="json")
+
+    with tempfile.TemporaryDirectory(prefix="oas-anchors-") as directory:
+        path = Path(directory) / "api.json"
+        document = json.loads((cases / "labels.after.json").read_text(encoding="utf-8"))
+        for target in ({}, {"$anchor": "Label", "$defs": {"Again": {"$anchor": "Label"}}},
+                       {"$id": "https://example.test/model", "$anchor": "Label"}):
+            document["components"]["schemas"]["Label"] = target
+            path.write_text(json.dumps(document), encoding="utf-8")
+            invoke(["validate", path], 2, format="json")
+            invoke(["breaking", path, path], 2, format="json")
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 

@@ -86,6 +86,7 @@ jobs:
         run: |
           python -m pip install jsonschema==4.25.1
           python compat/witness_reference.py --output _build/witness-reference.json
+          python compat/anchor_reference.py --output _build/anchor-reference.json
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
@@ -97,3 +98,4 @@ jobs:
             _build/response-reference.json
             _build/validation-reference.json
             _build/witness-reference.json
+            _build/anchor-reference.json

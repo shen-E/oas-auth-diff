@@ -24,7 +24,7 @@ priv struct Options {
 
 ///|
 fn usage() -> String {
-  "oas-auth-diff 0.12.0\n" +
+  "oas-auth-diff 0.13.0\n" +
   "Usage: oas-auth-diff compare BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff breaking BEFORE AFTER [--format text|json|sarif] [--local-refs] [--ref-root DIR]\n" +
   "       oas-auth-diff diff|summary BEFORE AFTER [--format text|json]\n" +
@@ -360,7 +360,7 @@ fn run(args : Array[String]) -> Int32 {
       return 0
     }
     [_, "--version"] => {
-      println("oas-auth-diff 0.12.0")
+      println("oas-auth-diff 0.13.0")
       return 0
     }
     [_, "checks"] => {

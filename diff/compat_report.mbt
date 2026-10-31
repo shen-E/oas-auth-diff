@@ -4,7 +4,7 @@ fn schema_semantics() -> Json {
     "direction": "readOnly/writeOnly-directional-requiredness",
     "present_properties": "constraints-retained",
     "format": "annotation; changed annotations make comparison incomplete",
-    "pattern": "bounded-ascii-regular-language",
+    "pattern": "bounded-bmp-positive-regular-language",
   }
 }
 

@@ -149,6 +149,7 @@ pub struct ReferenceResolver {
 }
 pub fn ReferenceResolver::new(SourceDocument, load? : ((String, String) -> SourceDocument raise DocumentError)?) -> Self raise DocumentError
 pub fn ReferenceResolver::resolve(Self, String, Location) -> Result[(Json, Location), Diagnostic]
+pub fn ReferenceResolver::resolve_schema(Self, String, Location) -> Result[(Json, Location), Diagnostic]
 pub fn ReferenceResolver::root(Self) -> Json
 
 pub struct ResponseContract {

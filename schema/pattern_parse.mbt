@@ -49,8 +49,8 @@ fn PatternParser::hex(
     }
     value = value * 16 + digit
   }
-  if value > 127 {
-    raise SchemaError("Pattern profile supports ASCII character atoms")
+  if value >= 0xd800 && value <= 0xdfff {
+    raise SchemaError("Surrogate pattern escapes require a code-unit policy")
   }
   value
 }
@@ -64,6 +64,21 @@ fn PatternParser::escaped(
   match char {
     'd' => [(48, 57)]
     'w' => [(48, 57), (65, 90), (95, 95), (97, 122)]
+    // ECMAScript WhiteSpace and LineTerminator, not Unicode White_Space:
+    // U+0085 and the former U+180E whitespace are deliberately absent.
+    's' =>
+      [
+        (9, 13),
+        (32, 32),
+        (0xa0, 0xa0),
+        (0x1680, 0x1680),
+        (0x2000, 0x200a),
+        (0x2028, 0x2029),
+        (0x202f, 0x202f),
+        (0x205f, 0x205f),
+        (0x3000, 0x3000),
+        (0xfeff, 0xfeff),
+      ]
     'n' => [(10, 10)]
     'r' => [(13, 13)]
     't' => [(9, 9)]
@@ -124,6 +139,9 @@ fn PatternParser::character_class(
         high[0].0 != high[0].1 ||
         low[0].0 > high[0].0 {
         raise SchemaError("Invalid pattern character range")
+      }
+      if low[0].0 <= 0xdfff && high[0].0 >= 0xd800 {
+        raise SchemaError("Pattern range crosses surrogate code units")
       }
       ranges.push((low[0].0, high[0].0))
     } else {

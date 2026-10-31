@@ -279,6 +279,7 @@ priv struct CachedDocument {
 ///|
 priv struct Graph {
   documents : Map[String, CachedDocument]
+  schema_indexes : Map[String, SchemaIndex]
   requests : Map[String, Map[String, Result[String, LoadFailure]]]
   load : ((String, String) -> SourceDocument raise DocumentError)?
   resource_diagnostics : Array[Diagnostic]

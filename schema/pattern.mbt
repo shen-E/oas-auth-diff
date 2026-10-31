@@ -84,8 +84,8 @@ fn compile_expression(
 
 ///|
 fn parse_pattern(text : String, budget : Budget) -> Pattern raise SchemaError {
-  if text.length() > 512 || text.iter().any(c => c.to_int() > 127) {
-    raise SchemaError("Pattern profile allows at most 512 ASCII characters")
+  if text.length() > 512 || text.iter().any(c => c.to_int() > 0xffff) {
+    raise SchemaError("Pattern profile allows at most 512 BMP characters")
   }
   let parser = { chars: text.to_array(), index: 0, }
   let expression = parser.expression(0)
@@ -95,7 +95,8 @@ fn parse_pattern(text : String, budget : Budget) -> Pattern raise SchemaError {
   let states = []
   let (s, e) = compile_expression(expression, states)
   // JSON Schema uses search semantics. The surrounding loops also consume
-  // non-ASCII scalars; only the pattern's character atoms are restricted.
+  // arbitrary scalars. BMP-only positive atoms avoid UTF-16/code-point
+  // disagreement; surrogate atoms/ranges and complements are refused.
   let start = new_state(states)
   let accept = new_state(states)
   states[start].epsilon.push(s)

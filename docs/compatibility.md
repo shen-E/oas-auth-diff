@@ -10,6 +10,7 @@ oas-auth-diff summary cases/payload.before.yaml cases/payload.after.json
 oas-auth-diff breaking cases/payload.before.yaml cases/payload.after.json --format json
 oas-auth-diff breaking cases/payload.before.yaml cases/payload.after.json --format sarif --source-root .
 oas-auth-diff checks --format json
+oas-auth-diff breaking cases/labels.before.yaml cases/labels.after.json --format json
 ```
 
 The example rejects the formerly valid request `{"state":"draft"}` and permits
@@ -108,11 +109,14 @@ the compatibility solver new assertion semantics. A custom global dialect makes
 ### String patterns
 
 `pattern` uses unanchored ECMAScript search semantics. The bounded regular
-profile supports ASCII literals, positive character classes/ranges, `\d`, `\w`,
-ASCII hexadecimal/Unicode escapes, escaped metacharacters and control characters,
+profile supports BMP scalar literals, positive character classes/ranges, `\d`, `\w`,
+`\s`, BMP hexadecimal/Unicode escapes, escaped metacharacters and control characters,
 capturing/noncapturing groups, alternation, `?`/`*`/`+`, counted repetitions and
 `^`/`$` assertions. Lazy repetitions have the same accepted language. Character
-atoms are ASCII; unanchored prefixes/suffixes can contain any Unicode scalar.
+atoms exclude surrogate code units; unanchored prefixes/suffixes can contain any Unicode scalar.
+`\s` uses ECMAScript WhiteSpace and LineTerminator, including U+FEFF and excluding
+U+0085/U+180E. Positive BMP atoms preserve acceptance in both ECMAScript Unicode
+and code-unit modes on well-formed strings.
 `$` follows ECMAScript's default end-of-input semantics, including newline cases.
 
 Thompson NFAs feed a bounded product search for language inclusion, intersection
@@ -122,7 +126,7 @@ bounds are at most 128; larger bounds can still be proved through separate
 length and language implications. The instance evaluator checks every witness.
 Limits are 512 pattern characters, grouping depth 32, repetition counts 64,
 256 NFA states per pattern and 4096 product states, within the Schema step budget.
-Dots, negated classes, Unicode character atoms/classes, lookaround, backreferences
+Dots, negated classes, non-BMP atoms, surrogate escapes/ranges, Unicode property classes, lookaround, backreferences
 and inline flags remain incomplete. No backtracking engine runs on input data.
 
 ### Directional requiredness and formats
@@ -163,7 +167,14 @@ and be required. Template parameter renames preserve matching by position.
 Parameter, body, response, Path Item and nested Schema references use the bounded,
 caller-controlled local source graph. `--local-refs`/`--ref-root` retain their
 directory confinement. Components can be renamed or inlined without changing a
-resolved Schema. Recursive Schemas, assertion siblings beside a 3.0 Schema `$ref`,
+resolved Schema. Static 3.1 Schema references also support `$anchor` and direct
+references to `$dynamicAnchor` in resources without `$id`. A lazy, cached index visits
+only specified Schema positions, including unused `$defs`, and excludes data and
+extension payloads. Named fragments are percent-decoded; duplicate names are
+ambiguous. Evidence retains the actual source URI and pointer. Standalone Schema
+files and OpenAPI source documents are indexed; other external object containers
+remain accessible by pointers. `$dynamicRef` evaluation remains unsupported.
+Recursive Schemas, assertion siblings beside a 3.0 Schema `$ref`,
 `$id` resource scopes, unavailable targets and unresolved link references
 produce diagnostics. References inside example data are not loaded. Locations
 identify the actual referenced Schema resource without invented line numbers.
@@ -255,11 +266,14 @@ enumerate 16129 finite enum policy pairs and check 576 object Schema pairs again
 a separate finite-assignment evaluator, plus 2304 finite composition pairs
 against an independent bit-set truth table and 225 small integer interval pairs.
 An additional 64 finite pattern-language pairs use an explicit finite-set oracle.
-`schema/pattern_reference.mjs` generates a 38-pattern × 400-word evaluation table
-with ECMAScript `RegExp`; MoonBit checks all 15200 decisions on each backend.
+`schema/pattern_reference.mjs` generates a 50-pattern × 839-word evaluation table
+with ECMAScript `RegExp`; MoonBit checks all 41950 decisions on each backend.
 The corpus includes anchors, final newlines, empty languages, nullable loops,
-escapes, ranges and Unicode text around ASCII matches. CI regenerates and checks
-the committed table.
+escapes, ranges, BMP atoms, whitespace boundaries and non-BMP text around matches.
+The generator also asserts Unicode/code-unit agreement. CI regenerates and checks
+the committed table. `compat/anchor_reference.py` adds 24 external JSON/YAML
+anchor/pointer comparisons; jsonschema 4.25.1 independently resolves targets and
+verifies all eight generated exclusion witnesses.
 
 `compat/string_reference.py` adds 56 string/direction/format cases in four input
 combinations (224 comparisons). The five matrices total 1212 comparisons, with
@@ -284,6 +298,7 @@ python compat/response_reference.py --reference path/to/oasdiff --output respons
 python validation/reference.py --reference path/to/oasdiff --output validation-results.json
 python -m pip install jsonschema==4.25.1
 python compat/witness_reference.py --output witness-results.json
+python compat/anchor_reference.py --output anchor-results.json
 node schema/pattern_reference.mjs
 moon fmt
 ```

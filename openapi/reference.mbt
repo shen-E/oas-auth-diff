@@ -124,6 +124,7 @@ fn Graph::lookup_ref(
   reference : String,
   at : Location,
   external~ : Bool = true,
+  schema~ : Bool = false,
 ) -> (Value, Location) raise AuthError {
   let (path, fragment) = match reference.split_once("#") {
     Some((path, fragment)) => (path.to_owned(), fragment.to_owned())
@@ -142,6 +143,19 @@ fn Graph::lookup_ref(
   }
   let decoded = decode_percent(fragment, at)
   if decoded != "" && !decoded.has_prefix("/") {
+    if schema && anchor_name(decoded) {
+      match self.schema_index(uri).anchors.get(decoded) {
+        Some(Ok(target)) => return target
+        Some(Err(diagnostic)) =>
+          issue(diagnostic.code, diagnostic.message, diagnostic.location)
+        None =>
+          issue(
+            "ref.anchor-missing",
+            "Schema anchor does not exist in the unscoped resource: " + decoded,
+            at,
+          )
+      }
+    }
     issue(
       "ref.pointer", "Expected an empty fragment or a #/... JSON Pointer", at,
     )

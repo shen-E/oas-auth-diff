@@ -92,8 +92,8 @@ test "pattern intersections account for string lengths and nested witnesses" {
 test "unsupported pattern syntax and resource limits produce typed errors" {
   for
     pattern in [
-      ".", "[^a]", "(?=a)", "(a)\\1", "\\p{L}", "猫", "a{65}", "(", "a{2,1}", "[z-a]",
-      "a**", "\\q", "(a{64}){64}",
+      ".", "[^a]", "(?=a)", "(a)\\1", "\\p{L}", "🚀", "a{65}", "(", "a{2,1}", "[z-a]",
+      "a**", "\\q", "(a{64}){64}", "\\uD800", "\\uDFFF", "[\\uD7FF-\\uE000]",
     ] {
     let refused = try {
       ignore(@schema.parse({ "pattern": pattern }))
@@ -103,6 +103,41 @@ test "unsupported pattern syntax and resource limits produce typed errors" {
     }
     assert_true(refused)
   }
+}
+
+///|
+test "BMP atoms and ECMAScript whitespace preserve scalar string lengths" {
+  let whitespace = @schema.parse({ "type": "string", "pattern": "^\\s$" })
+  for
+    text in [
+      " ", "\t", "\n", "\r", "\u{000b}", "\u{000c}", "\u{00a0}", "\u{1680}", "\u{2000}",
+      "\u{200a}", "\u{2028}", "\u{2029}", "\u{202f}", "\u{205f}", "\u{3000}", "\u{feff}",
+    ] {
+    assert_true(whitespace.accepts(Json::string(text)))
+  }
+  for text in ["", "  ", "\u{0085}", "\u{180e}", "\u{200b}", "猫", "🚀"] {
+    assert_false(whitespace.accepts(Json::string(text)))
+  }
+  let wide = @schema.parse({ "type": "string", "pattern": "^[一-龥é]+$" })
+  let narrow = @schema.parse({ "type": "string", "pattern": "^[猫é]+$" })
+  assert_true(@schema.subset(narrow, wide) is Included)
+  match @schema.subset(wide, narrow) {
+    Excluded(value) => {
+      assert_true(wide.accepts(value))
+      assert_false(narrow.accepts(value))
+    }
+    _ => fail("expected a Unicode language witness")
+  }
+  let escaped = @schema.parse({
+    "type": "string",
+    "pattern": "^\\u732b\\xE9$",
+    "maxLength": 2,
+  })
+  assert_true(escaped.accepts(Json::string("猫é")))
+  assert_false(escaped.accepts(Json::string("猫é🚀")))
+  assert_true(
+    @schema.parse({ "pattern": "猫" }).accepts(Json::string("🚀猫🚀")),
+  )
 }
 
 ///|

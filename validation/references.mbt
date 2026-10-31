@@ -293,7 +293,12 @@ fn Walk::visit(
         "schema", "path-item", "parameter", "header", "response", "request-body",
         "security-scheme", "example", "link", "callback",
       ].contains(kind) {
-      match self.resolver.resolve(reference, location_key(at, "$ref")) {
+      let resolved = if kind == "schema" && !self.legacy {
+        self.resolver.resolve_schema(reference, location_key(at, "$ref"))
+      } else {
+        self.resolver.resolve(reference, location_key(at, "$ref"))
+      }
+      match resolved {
         Err(diagnostic) =>
           self.diagnostic(
             diagnostic.code,
