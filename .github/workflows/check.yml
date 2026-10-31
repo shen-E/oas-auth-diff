@@ -30,7 +30,7 @@ jobs:
           node --version
           node schema/pattern_reference.mjs
           moon fmt
-          git diff --exit-code -- schema/pattern_oracle_test.mbt
+          git diff --exit-code
       - run: moon test --target all
       - run: moon fmt --check
 
