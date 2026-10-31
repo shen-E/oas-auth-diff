@@ -1,7 +1,8 @@
 # oas-auth-diff
 
-Find authentication regressions between two OpenAPI documents, with a concrete
-permission set that the new version accepts and the old version rejects.
+Inspect OpenAPI document changes, client compatibility and authentication
+regressions. Supported Schema and authorization breaks include concrete,
+independently evaluated counterexamples.
 
 `diff` and `summary` inspect general entry-document changes, including metadata.
 `breaking` checks endpoint/parameter contracts and request/response Schema
