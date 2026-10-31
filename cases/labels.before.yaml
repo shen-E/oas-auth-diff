@@ -1,0 +1,22 @@
+openapi: 3.1.1
+info:
+  title: Label service
+  version: 1.0.0
+paths:
+  /labels:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#Label'
+      responses:
+        '204':
+          description: Stored
+components:
+  schemas:
+    Label:
+      $anchor: Label
+      type: string
+      pattern: '^[一-龥]+$'
