@@ -49,7 +49,11 @@ fn Graph::schema_value(
       }
     }
     let reference = string(reference, at.key("$ref"))
-    let (target, origin) = self.lookup_ref(reference, at.key("$ref"))
+    let (target, origin) = if budget.legacy {
+      self.lookup_ref(reference, at.key("$ref"))
+    } else {
+      self.lookup_schema_ref(reference, at.key("$ref"))
+    }
     let key = (origin.uri, origin.pointer)
     if seen.contains(key) {
       issue(
@@ -70,6 +74,21 @@ fn Graph::schema_value(
     return resolved
   }
   let result = fields.copy()
+  if !budget.legacy {
+    for keyword in ["$anchor", "$dynamicAnchor"] {
+      if fields.get(keyword) is Some(value) {
+        match value {
+          Str(name) if anchor_name(name) => ignore(result.remove(keyword))
+          _ =>
+            issue(
+              "contract.anchor",
+              "Invalid Schema anchor declaration",
+              at.key(keyword),
+            )
+        }
+      }
+    }
+  }
   for (key, child) in fields {
     let location = at.key(key)
     if ["properties", "dependentSchemas", "patternProperties"].contains(key) {

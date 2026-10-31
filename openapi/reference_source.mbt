@@ -45,3 +45,26 @@ pub fn ReferenceResolver::resolve(
     AuthError(code, message, location) => Err({ code, message, location, })
   }
 }
+
+///|
+/// Resolve a static 3.1 Schema reference, including unscoped named anchors.
+/// Resource-changing $id and dynamic reference evaluation remain unsupported.
+pub fn ReferenceResolver::resolve_schema(
+  self : ReferenceResolver,
+  reference : String,
+  at : Location,
+) -> Result[(Json, Location), Diagnostic] {
+  if !self.graph.documents.contains(at.uri) {
+    return Err({
+      code: "ref.source",
+      message: "Unknown referring source",
+      location: at,
+    })
+  }
+  try {
+    let (value, location) = self.graph.lookup_schema_ref(reference, at)
+    Ok((value_json(value), location))
+  } catch {
+    AuthError(code, message, location) => Err({ code, message, location, })
+  }
+}

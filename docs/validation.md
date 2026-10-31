@@ -57,8 +57,15 @@ references are loaded. Limits are 16 MiB, 128 nesting levels and 250000 nodes pe
 source, 64 documents and 1000000 nodes in the source graph. The validation walk
 also stops at depth 128 or 250000 distinct context visits.
 
-Input Schema `$id` resource scopes, `$dynamicRef`, `$recursiveRef` and named-anchor
-targets remain incomplete. They are not resolved against a guessed file base.
+Static 3.1 Schema references support named `$anchor` fragments and direct `$ref`
+references to `$dynamicAnchor`. The source index visits specified Schema positions
+and standalone Schema files, skips data/extension payloads and resource-changing
+`$id` subtrees, and rejects ambiguous names. Percent-encoded names resolve to the
+same declaration. Recursive anchored Schemas terminate through the normal visited
+set. Actual target source URIs and pointers are retained.
+Input Schema `$id` resource scopes, `$dynamicRef` and `$recursiveRef` remain
+incomplete. Pointer targets and referrers nested under `$id` also return a diagnostic
+rather than bypassing that resource boundary. No file base is guessed.
 Validation does not check service behavior, every OpenAPI prose requirement or
 cross relationships through callback/webhook and referenced parameter graphs.
 Use `breaking` for supported client contracts and `compare` for authorization.
@@ -116,6 +123,8 @@ provides `exit_code()`, `render_text/json` render it, and `diff` exposes
 `render_validation_sarif`. Fatal strict-entry errors raise `openapi.DocumentError`.
 `openapi.ReferenceResolver` separately exposes strict source loading, fresh root
 snapshots and controlled JSON Pointer resolution for library consumers.
+`ReferenceResolver.resolve_schema` adds static Schema anchor resolution; `resolve`
+retains its pointer-only contract for ordinary OpenAPI Reference Objects.
 
 `validation/reference.py` checks 50 manually specified valid/invalid documents
 in JSON and YAML against oasdiff v1.35.0. Upstream exit 102 is a loader failure,

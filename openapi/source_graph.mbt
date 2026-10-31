@@ -9,6 +9,7 @@ fn source_graph(
 ) -> Graph {
   let graph : Graph = {
     documents: Map([]),
+    schema_indexes: Map([]),
     requests: Map([]),
     load,
     resource_diagnostics: [],
