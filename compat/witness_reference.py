@@ -13,6 +13,7 @@ from jsonschema import Draft4Validator, Draft202012Validator
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT4, DRAFT202012
 from schema_reference import cases
+from string_reference import cases as string_cases
 
 
 def legacy_types(value):
@@ -30,11 +31,27 @@ def legacy_types(value):
 def validator(document, direction):
     legacy = document["openapi"].startswith("3.0")
     document = legacy_types(document) if legacy else copy.deepcopy(document)
+    document = directional_fixture(document, direction)
     specification = DRAFT4 if legacy else DRAFT202012
     registry = Registry().with_resource("urn:fixture", Resource(document, specification))
     pointer = "/paths/~1orders/post/" + ("requestBody" if direction == "request" else "responses/200") + "/content/application~1json/schema"
     cls = Draft4Validator if legacy else Draft202012Validator
     return cls({"$ref": "urn:fixture#" + pointer}, registry=registry)
+
+
+def directional_fixture(value, direction):
+    # The interoperability fixtures use unconditional property annotations.
+    # Retain properties and their assertions; adapt only the required names.
+    if isinstance(value, dict):
+        result = {k: directional_fixture(v, direction) for k, v in value.items()}
+        if isinstance(value.get("required"), list) and isinstance(value.get("properties"), dict):
+            flag = "readOnly" if direction == "request" else "writeOnly"
+            result["required"] = [name for name in value["required"]
+                                  if value["properties"].get(name, {}).get(flag) is not True]
+        return result
+    if isinstance(value, list):
+        return [directional_fixture(v, direction) for v in value]
+    return value
 
 
 def instance(value):
@@ -60,7 +77,8 @@ def main():
     results = []
     with tempfile.TemporaryDirectory(prefix="oas-instance-witness-") as directory:
         before, after = Path(directory) / "before.json", Path(directory) / "after.json"
-        for name, baseline, candidate, expected in cases():
+        scenarios = list(cases()) + [(n, b, a, expected) for n, b, a, expected, _ in string_cases()]
+        for name, baseline, candidate, expected in scenarios:
             before.write_text(json.dumps(baseline), encoding="utf-8")
             after.write_text(json.dumps(candidate), encoding="utf-8")
             completed = subprocess.run([str(ours), "breaking", str(before), str(after), "--format", "json"],
@@ -71,7 +89,7 @@ def main():
             source_validator, target_validator = validator(source, direction), validator(target, direction)
             witnesses = [instance(f["witness"]) for f in report["findings"] if f["witness_verified"]]
             results.append({"case": name, "witnesses": len(witnesses), "passed": completed.returncode == expected
-                            and (expected == 0 or bool(witnesses))
+                            and (expected != 1 or bool(witnesses))
                             and all(source_validator.is_valid(w) and not target_validator.is_valid(w) for w in witnesses)})
     report = {"validator": "jsonschema " + version("jsonschema"), "total": len(results),
               "passed": sum(r["passed"] for r in results), "witnesses": sum(r["witnesses"] for r in results), "cases": results}

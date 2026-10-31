@@ -17,12 +17,14 @@ fn compare_schema(
     None => operation.location
   }
   let result = try {
+    compare_formats(before, after, at, diagnostics)
     let old = @schema.parse(
       match before {
         Some(s) => s.definition
         None => Json::object(Map([]))
       },
       openapi_30=before_30,
+      direction=if request { @schema.Request } else { @schema.Response },
     )
     let next = @schema.parse(
       match after {
@@ -30,6 +32,7 @@ fn compare_schema(
         None => Json::object(Map([]))
       },
       openapi_30=after_30,
+      direction=if request { @schema.Request } else { @schema.Response },
     )
     if request {
       @schema.subset(old, next)

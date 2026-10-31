@@ -96,9 +96,9 @@ test "caller-owned enum data and returned witnesses cannot mutate a parsed Schem
 test "unsupported assertions and malformed declarations return typed errors" {
   let invalid : Array[Json] = [
     { "allOf": [] },
-    { "format": "uuid" },
+    { "format": 1 },
     { "multipleOf": 1 },
-    { "readOnly": true },
+    { "readOnly": "true" },
     { "type": ["string", "string"] },
     { "enum": [1, 1.0] },
     { "required": [1] },

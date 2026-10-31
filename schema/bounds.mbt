@@ -414,7 +414,13 @@ fn scalar_samples(
     return numeric_candidates(rule.numeric)
   }
   if kind == "string" {
-    return size_candidates(rule.length).map(sized_string)
+    let result = size_candidates(rule.length).map(sized_string)
+    if !rule.patterns.is_empty() &&
+      language_search(rule.patterns, rule.length, None, empty_bounds(), budget)
+      is Different(text) {
+      result.push(Json::string(text))
+    }
+    return result
   }
   let result = []
   if kind == "array" {

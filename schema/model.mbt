@@ -28,6 +28,7 @@ priv struct Constraints {
   length : Bounds
   size : Bounds
   count : Bounds
+  patterns : Array[Pattern]
 }
 
 ///|
@@ -89,7 +90,7 @@ fn read_model(
         "nullable", "title", "description", "example", "examples", "$comment", "deprecated",
         "allOf", "anyOf", "oneOf", "const", "$defs", "minimum", "maximum", "exclusiveMinimum",
         "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties",
-        "maxProperties", "$schema",
+        "maxProperties", "$schema", "pattern",
       ].contains(key) &&
       !key.has_prefix("x-") {
       raise SchemaError("Unsupported Schema keyword: " + key)
@@ -204,6 +205,11 @@ fn read_model(
   let length = read_size(fields, "minLength", "maxLength")
   let size = read_size(fields, "minItems", "maxItems")
   let count = read_size(fields, "minProperties", "maxProperties")
+  let patterns = match fields.get("pattern") {
+    None => []
+    Some(String(text)) => [parse_pattern(text, budget)]
+    _ => raise SchemaError("pattern must be a string")
+  }
   let base = if types.length() == kinds.length() &&
     values is None &&
     properties.is_empty() &&
@@ -213,7 +219,8 @@ fn read_model(
     bounds_empty(numeric) &&
     bounds_empty(length) &&
     bounds_empty(size) &&
-    bounds_empty(count) {
+    bounds_empty(count) &&
+    patterns.is_empty() {
     Any
   } else {
     Rule({
@@ -227,6 +234,7 @@ fn read_model(
       length,
       size,
       count,
+      patterns,
     })
   }
   let mut result = base
@@ -258,14 +266,18 @@ fn read_model(
 }
 
 ///|
-/// Parse positive compositions, type/enum, object/item and numeric/size assertions.
-/// Unsupported assertions return an explicit error, including format/default,
-/// multipleOf and directional readOnly/writeOnly annotations.
+/// Parse the bounded positive Schema fragment, with optional directional
+/// requiredness. Formats annotate; pattern assertions use the documented
+/// regular profile. Unsupported assertions return an explicit error.
 pub fn parse(
   value : Json,
   openapi_30~ : Bool = false,
+  direction~ : Direction = Neutral,
 ) -> Schema raise SchemaError {
   validate_value(value, 0, { remaining: 20000, })
+  let value = project_direction(value, direction, openapi_30, Map([]), {
+    remaining: 20000,
+  })
   { model: read_model(value, openapi_30, 0, { remaining: 20000, }), }
 }
 

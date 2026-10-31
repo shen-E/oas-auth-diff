@@ -1,0 +1,24 @@
+openapi: 3.1.1
+info: {title: Account representations, version: '1.0'}
+paths:
+  /accounts:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Account'}
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+components:
+  schemas:
+    Account:
+      type: object
+      required: [id, name, token]
+      properties:
+        id: {type: integer, format: int64, readOnly: true}
+        name: {type: string, pattern: '^[a-z]+$'}
+        token: {type: string}

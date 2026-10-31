@@ -179,7 +179,8 @@ fn accepts_model(
           true
         }
         String(text) =>
-          within(rule.length, Json::number(text.iter().count().to_double()))
+          within(rule.length, Json::number(text.iter().count().to_double())) &&
+          rule.patterns.all(p => pattern_accepts(p, text, budget))
         Number(_) => within(rule.numeric, value)
         _ => true
       }
