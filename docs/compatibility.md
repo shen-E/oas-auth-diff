@@ -74,18 +74,36 @@ are supported. Disjoint tagged unions can be proved using required discriminator
 properties expressed as enum/const values; the `discriminator` keyword itself
 is not interpreted.
 
+Numeric `minimum`/`maximum` and exclusive bounds use exact decimal ordering,
+including adjacent large integers and values smaller than binary floating-point
+precision. OpenAPI 3.0 uses boolean exclusive flags; 3.1 uses numeric exclusive
+bounds. Integer inclusions round boundaries according to the accepted integer
+set. `minLength`/`maxLength` count Unicode scalar values, and `minItems`/`maxItems`
+and `minProperties`/`maxProperties` constrain collection sizes. Assertions only
+apply to their corresponding instance types. These constraints intersect through
+`allOf` and participate in nested-property/item witnesses.
+
 The inclusion algorithm returns a proof, a counterexample or Unknown. Each
 counterexample is checked with a separate instance evaluator. Failure to prove
 inclusion alone never becomes a finding. Schema parsing/comparison have
 20000-step budgets; Schema and instance nesting is limited to 128. Exhaustion
 produces an incomplete result.
+Size-bound witness seeds use at most 4096 characters/items/properties; decimal
+neighbour construction uses at most 4096 coefficient digits. Required properties
+and supplied enum/const instances retain their normal input/step limits. Large limits can
+still be evaluated and compared exactly. If no bounded witness or inclusion proof
+is available, the result is incomplete.
 
 Unsupported Schema assertions produce diagnostics even when present on both
-sides. These include numeric/string/array-size bounds, patterns, formats,
+sides. These include `multipleOf`, patterns, formats,
 defaults, readOnly/writeOnly behavior, discriminators, dynamic references and
 custom dialects. Some infinite compositions also remain undecided within the
 proof budget. This is a bounded
 checker, not a complete JSON Schema inclusion solver.
+The standard 2020-12 and bundled OpenAPI dialects can be declared explicitly.
+Supplying a custom dialect to `validate` checks Schema syntax; it does not teach
+the compatibility solver new assertion semantics. A custom global dialect makes
+`breaking` incomplete even when the declaration is unchanged.
 
 Path-level parameters are inherited; operation declarations override them by
 `(in, name)`. Header names compare without case and reserved header parameters
@@ -152,17 +170,17 @@ dependency. Its catalog has 778 changelog checks and 121 validation checks; the
 | Effective parameters and endpoint matching | Requiredness, removal and path-template identity |
 | Request/response compatibility | 13 checks and the supported Schema assertions above |
 | Consumer changelog, lifecycle/version policies | Not implemented |
-| Specification validation | Bundled official entry-document metaschemas and paths cross checks; see validation scope |
+| Specification validation | Offline metaschemas, typed reference targets, registered dialects and paths cross checks; see validation scope |
 | General Schema inclusion and custom dialects | Unsupported assertions and undecided compositions remain incomplete |
 | Schema flattening/upgrade, multi-file structural diff | Not implemented |
 | Remote/Git input and upstream configuration surface | Not implemented; local loading only |
 | Reports | Local text/JSON/SARIF APIs; upstream schemas are not emulated |
 
 `compat/reference.py` checks 48 endpoint/parameter scenarios in four JSON/YAML
-combinations (192 comparisons). `compat/schema_reference.py` checks 66
-request/response scenarios in those combinations (264 comparisons): 3.0/3.1
+combinations (192 comparisons). `compat/schema_reference.py` checks 138
+request/response scenarios in those combinations (552 comparisons): 3.0/3.1
 nullability, types, enum changes, object requiredness, array items, components
-composition and documentation-only edits. It checks manually specified verdicts and affected
+composition, numeric/size bounds and documentation-only edits. It checks manually specified verdicts and affected
 operations, and retains both tools' findings. Generic local Schema IDs aggregate
 several upstream rule IDs.
 
@@ -170,24 +188,37 @@ The oracle uses `--flatten-params` for effective parameters and `--fail-on ERR`
 for confirmed breaks. The Schema matrix also enables `--flatten-allof` to compare
 combined constraints; without it the reference downgrades some branch edits to
 warnings. `compat/response_reference.py` adds 36 status/header scenarios in four
-format combinations (144 comparisons). `validation/reference.py` checks 32
-validation scenarios in JSON and YAML (64 comparisons), retaining upstream loader
-errors separately from parsed-document violations. These four matrices total
-664 comparisons. The parameter matrix inventories the reference catalog;
+format combinations (144 comparisons). `validation/reference.py` checks 50
+validation scenarios in JSON and YAML (100 comparisons), including typed targets
+and recursive Schemas, retaining upstream loader errors separately from parsed
+violations. These four matrices total 988 comparisons. Eight Schema comparisons
+record an expected difference: v1.35.0 treats the 3.1 `exclusiveMinimum: 3` /
+`minimum: 3` switch as separate bound removal/addition, while this tool checks
+instance inclusion. The request relaxation and response restriction pass here;
+the reference reports a break. Both verdicts are asserted in the matrix rather
+than removing these cases or claiming identical behavior.
+
+The parameter matrix inventories the reference catalog;
 checks outside that matrix are not implied to be covered. CI verifies the pinned
-binary checksum and uploads all four result files. Independent MoonBit tests also
+binary checksum and uploads the four comparison matrices and independent witness results. Independent MoonBit tests also
 enumerate 16129 finite enum policy pairs and check 576 object Schema pairs against
 a separate finite-assignment evaluator, plus 2304 finite composition pairs
-against an independent bit-set truth table.
+against an independent bit-set truth table and 225 small integer interval pairs.
+`compat/witness_reference.py` uses Python `jsonschema==4.25.1` independently to
+check all 64 emitted witnesses across the 138 Schema cases. JSON numbers in
+witnesses are parsed as Decimal, and 3.0 nullable types are adapted explicitly.
 
 ```sh
 python compat/reference.py --reference path/to/oasdiff --output parameter-results.json
 python compat/schema_reference.py --reference path/to/oasdiff --output schema-results.json
 python compat/response_reference.py --reference path/to/oasdiff --output response-results.json
 python validation/reference.py --reference path/to/oasdiff --output validation-results.json
+python -m pip install jsonschema==4.25.1
+python compat/witness_reference.py --output witness-results.json
 ```
 
 Sources: [OpenAPI 3.0 Schema](https://spec.openapis.org/oas/v3.0.4.html#schema-object),
 [OpenAPI 3.1 Schema](https://spec.openapis.org/oas/v3.1.1.html#schema-object),
+[JSON Schema numeric and size assertions](https://json-schema.org/draft/2020-12/json-schema-validation),
 [oasdiff commands](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/README.md),
 [check catalog](https://github.com/oasdiff/oasdiff/blob/v1.35.0/docs/CHECKS.md).

@@ -150,6 +150,9 @@ fn accepts_model(
       }
       match value {
         Object(fields) => {
+          if !within(rule.count, Json::number(fields.length().to_double())) {
+            return false
+          }
           if rule.required.any(k => !fields.contains(k)) {
             return false
           }
@@ -165,6 +168,9 @@ fn accepts_model(
           true
         }
         Array(values) => {
+          if !within(rule.size, Json::number(values.length().to_double())) {
+            return false
+          }
           for value in values {
             if !accepts_model(rule.items, value, budget) {
               return false
@@ -172,6 +178,9 @@ fn accepts_model(
           }
           true
         }
+        String(text) =>
+          within(rule.length, Json::number(text.iter().count().to_double()))
+        Number(_) => within(rule.numeric, value)
         _ => true
       }
     }

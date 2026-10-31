@@ -143,6 +143,14 @@ pub struct ParameterContract {
 }
 pub fn ParameterContract::same_shape(Self, Self) -> Bool
 
+pub struct ReferenceResolver {
+  source : String
+  // private fields
+}
+pub fn ReferenceResolver::new(SourceDocument, load? : ((String, String) -> SourceDocument raise DocumentError)?) -> Self raise DocumentError
+pub fn ReferenceResolver::resolve(Self, String, Location) -> Result[(Json, Location), Diagnostic]
+pub fn ReferenceResolver::root(Self) -> Json
+
 pub struct ResponseContract {
   status : String
   content : Array[MediaContract]

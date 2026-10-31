@@ -38,8 +38,8 @@ pub fn render_json(report : Report) -> String {
   let value : Json = {
     "schema_version": 1,
     "report_kind": "validation",
-    "scope": "official-entry-document-metaschema",
-    "reference_targets_checked": false,
+    "scope": "official-document-and-reference-targets",
+    "reference_targets_checked": report.complete,
     "format_assertions": false,
     "complete": report.complete,
     "valid": if report.complete {
@@ -97,19 +97,22 @@ pub fn render_text(report : Report) -> String {
 }
 
 ///|
-/// Validate the entry document with bundled official OpenAPI metaschemas.
-/// Input references remain data; this does not fetch or validate their targets.
+/// Validate OpenAPI objects and reference targets with offline metaschemas.
+/// A loader may supply bounded local sources. Dialects are supplied explicitly;
+/// neither metaschemas nor document references trigger network access.
 pub fn validate(
   text : String,
   format~ : @openapi.InputFormat,
   source~ : String = "<input>",
+  load~ : ((String, String) -> @openapi.SourceDocument raise @openapi.DocumentError)? = None,
+  dialects~ : Map[String, Json] = Map([]),
 ) -> Report raise @openapi.DocumentError {
   let snapshot = @openapi.parse_snapshot(text, format~, source~)
   let legacy = snapshot.version.has_prefix("3.0.")
   let uri = if legacy {
     "https://spec.openapis.org/oas/3.0/schema/2024-10-18"
   } else {
-    "https://spec.openapis.org/oas/3.1/schema-base/2025-09-15"
+    "https://spec.openapis.org/oas/3.1/schema/2025-09-15"
   }
   let resources = Map([])
   for (key, value) in bundled_schemas {
@@ -119,6 +122,8 @@ pub fn validate(
       },
     )
   }
+  let diagnostics : Array[@openapi.Diagnostic] = []
+  prepare_dialects(resources, dialects, source, diagnostics)
   let validator = @metaschema.Schema::new(resources[uri], remotes=resources) catch {
     error =>
       raise @openapi.DocumentError(
@@ -126,27 +131,13 @@ pub fn validate(
       )
   }
   let document = snapshot.to_json()
-  let diagnostics : Array[@openapi.Diagnostic] = []
-  if !legacy && document is Object(fields) {
-    if fields.get("jsonSchemaDialect") is Some(String(dialect)) &&
-      dialect != "https://spec.openapis.org/oas/3.1/dialect/2024-11-10" {
-      diagnostics.push({
-        code: "validation.dialect",
-        message: "Custom JSON Schema dialect is not bundled: " + dialect,
-        location: { uri: source, pointer: "/jsonSchemaDialect", },
-      })
-    }
-  }
-  if !legacy {
-    dialect_overrides(
-      document,
-      { uri: source, pointer: "", },
-      false,
-      diagnostics,
-    )
+  let dialect = match document {
+    Object(fields) if !legacy &&
+      fields.get("jsonSchemaDialect") is Some(String(uri)) => uri
+    _ => "https://spec.openapis.org/oas/3.1/dialect/2024-11-10"
   }
   let violations : Array[Violation] = []
-  if diagnostics.is_empty() {
+  {
     let faults = validator.faults(document)
     for index, fault in faults {
       if index >= 1000 {
@@ -164,6 +155,31 @@ pub fn validate(
         schema_pointer: fault.schema_at,
       })
     }
+    let resolver = @openapi.ReferenceResolver::new(
+      { text, format, source, },
+      load~,
+    )
+    let walk : Walk = {
+      resolver,
+      resources,
+      validators: Map([]),
+      legacy,
+      seen: Map([]),
+      active: Map([]),
+      document_dialects: Map([(source, Some(dialect))]),
+      violations,
+      diagnostics,
+      remaining: 250000,
+    }
+    if !legacy {
+      ignore(
+        walk.validator("schema", dialect, {
+          uri: source,
+          pointer: "/jsonSchemaDialect",
+        }),
+      )
+    }
+    walk.visit(document, { uri: source, pointer: "", }, "root", dialect, 0)
     semantic_checks(document, source, violations)
     if violations.length() > 1000 {
       if !diagnostics.any(d => d.code == "resource.validation-results") {
@@ -179,8 +195,13 @@ pub fn validate(
     }
   }
   violations.sort_by((a, b) => {
-    (a.location.pointer, a.keyword, a.schema_pointer).compare(
-      (b.location.pointer, b.keyword, b.schema_pointer),
+    (a.location.uri, a.location.pointer, a.keyword, a.schema_pointer).compare(
+      (b.location.uri, b.location.pointer, b.keyword, b.schema_pointer),
+    )
+  })
+  diagnostics.sort_by((a, b) => {
+    (a.location.uri, a.location.pointer, a.code, a.message).compare(
+      (b.location.uri, b.location.pointer, b.code, b.message),
     )
   })
   {

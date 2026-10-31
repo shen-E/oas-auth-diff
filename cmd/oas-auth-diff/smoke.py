@@ -41,7 +41,7 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.10.0" in invoke(["--version"], 0)
+    assert "0.11.0" in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -852,8 +852,15 @@ def main():
         null_witness = invoke(["breaking", old, new], 1, format="json")["findings"][0]
         assert null_witness["witness"] is None and null_witness["witness_verified"]
 
-        baseline = payload({"type": "string", "minLength": 1})
-        candidate = payload({"type": "string", "minLength": 2})
+        for wide, narrow in (({"type": "number", "minimum": 1}, {"type": "number", "minimum": 2}),
+                             ({"type": "string", "maxLength": 8}, {"type": "string", "maxLength": 3}),
+                             ({"type": "array", "items": {}, "minItems": 1}, {"type": "array", "items": {}, "minItems": 3})):
+            old.write_text(json.dumps(payload(wide)), encoding="utf-8")
+            new.write_text(json.dumps(payload(narrow)), encoding="utf-8")
+            assert invoke(["breaking", old, new], 1, format="json")["findings"][0]["witness_verified"]
+            invoke(["breaking", new, old], 0, format="json")
+        baseline = payload({"type": "string", "pattern": "^a"})
+        candidate = payload({"type": "string", "pattern": "^b"})
         candidate["paths"]["/orders"]["post"]["parameters"] = [{"name": "tenant", "in": "query", "required": True}]
         old.write_text(json.dumps(baseline), encoding="utf-8")
         new.write_text(json.dumps(candidate), encoding="utf-8")
@@ -862,7 +869,7 @@ def main():
         # General diff remains useful when a semantic assertion is unsupported.
         structural = invoke(["diff", old, new], 0, format="json")
         assert structural["report_kind"] == "structural-diff" and structural["complete"]
-        assert any(c["pointer"].endswith("/minLength") for c in structural["changes"])
+        assert any(c["pointer"].endswith("/pattern") for c in structural["changes"])
         summary = invoke(["summary", old, new], 0, format="json")
         assert summary["counts"]["total"] == len(structural["changes"]) and "changes" not in summary
         for command in ("diff", "summary"):
@@ -906,6 +913,32 @@ def main():
         custom = dict(valid, jsonSchemaDialect="https://example.test/dialect")
         path.write_text(json.dumps(custom), encoding="utf-8")
         assert invoke(["validate", path], 2, format="json")["valid"] is None
+
+        dialect = directory / "dialect.json"
+        dialect.write_text(json.dumps({"$id": "https://example.test/dialect",
+                                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                                      "$ref": "https://json-schema.org/draft/2020-12/schema"}), encoding="utf-8")
+        invoke(["validate", path, "--dialect", "https://example.test/dialect=" + str(dialect)], 0, format="json")
+        for extra in (["--dialect", "broken"], ["--ref-root"], ["--local-refs", "--local-refs"],
+                      ["--dialect", "https://example.test/dialect=" + str(dialect), "--dialect", "https://example.test/dialect=" + str(dialect)]):
+            invoke(["validate", path, *extra], 2, format="json")
+        split = copy.deepcopy(valid)
+        split["paths"]["/orders"]["get"]["responses"]["200"] = {"$ref": "response.yaml"}
+        path.write_text(json.dumps(split), encoding="utf-8")
+        target = directory / "response.yaml"
+        target.write_text("description: ok\n", encoding="utf-8")
+        invoke(["validate", path], 2, format="json")
+        checked = invoke(["validate", path, "--local-refs"], 0, format="json")
+        assert checked["reference_targets_checked"]
+        invoke(["validate", path, "--ref-root", directory], 0, format="json")
+        target.write_text("content: {}\n", encoding="utf-8")
+        invalid_target = invoke(["validate", path, "--local-refs"], 1, format="json")
+        assert any(v["location"]["uri"].endswith("/response.yaml") for v in invalid_target["violations"])
+        target_sarif = invoke(["validate", path, "--local-refs", "--source-root", directory], 1, format="sarif")
+        artifact = target_sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert artifact == {"uri": "response.yaml", "uriBaseId": "%SRCROOT%"}
+        target.write_text("$ref: response.yaml\n", encoding="utf-8")
+        invoke(["validate", path, "--local-refs"], 1, format="json")
 
         before, after = directory / "before.json", directory / "after.json"
         old = copy.deepcopy(valid)

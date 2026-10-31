@@ -48,7 +48,27 @@ def cases():
             ("anyof-branch-removed", {"anyOf": [{"type": "string"}, {"type": "integer"}]}, {"anyOf": [{"type": "string"}]}, 1, 0),
             ("oneof-branch-removed", {"oneOf": [{"type": "string"}, {"type": "integer"}]}, {"oneOf": [{"type": "string"}]}, 1, 0),
             ("oneof-reordered", {"oneOf": [{"type": "string"}, {"type": "integer"}]}, {"oneOf": [{"type": "integer"}, {"type": "string"}]}, 0, 0),
+            ("minimum-raised", {"type": "number", "minimum": -2}, {"type": "number", "minimum": 2}, 1, 0),
+            ("minimum-lowered", {"type": "number", "minimum": 2}, {"type": "number", "minimum": -2}, 0, 1),
+            ("maximum-lowered", {"type": "number", "maximum": 8}, {"type": "number", "maximum": 3}, 1, 0),
+            ("maximum-raised", {"type": "number", "maximum": 3}, {"type": "number", "maximum": 8}, 0, 1),
+            ("minimum-added", {"type": "number"}, {"type": "number", "minimum": 3}, 1, 0),
+            ("maximum-removed", {"type": "number", "maximum": 3}, {"type": "number"}, 0, 1),
+            ("length-min-raised", {"type": "string", "minLength": 1}, {"type": "string", "minLength": 3}, 1, 0),
+            ("length-min-lowered", {"type": "string", "minLength": 3}, {"type": "string", "minLength": 1}, 0, 1),
+            ("length-max-lowered", {"type": "string", "maxLength": 8}, {"type": "string", "maxLength": 3}, 1, 0),
+            ("length-max-raised", {"type": "string", "maxLength": 3}, {"type": "string", "maxLength": 8}, 0, 1),
+            ("items-min-raised", {"type": "array", "items": {}, "minItems": 1}, {"type": "array", "items": {}, "minItems": 3}, 1, 0),
+            ("items-min-lowered", {"type": "array", "items": {}, "minItems": 3}, {"type": "array", "items": {}, "minItems": 1}, 0, 1),
+            ("items-max-lowered", {"type": "array", "items": {}, "maxItems": 8}, {"type": "array", "items": {}, "maxItems": 3}, 1, 0),
+            ("items-max-raised", {"type": "array", "items": {}, "maxItems": 3}, {"type": "array", "items": {}, "maxItems": 8}, 0, 1),
+            ("properties-min-raised", {"type": "object", "minProperties": 1}, {"type": "object", "minProperties": 3}, 1, 0),
+            ("properties-max-raised", {"type": "object", "maxProperties": 3}, {"type": "object", "maxProperties": 8}, 0, 1),
         ]
+        inclusive = {"type": "number", "minimum": 3}
+        exclusive = dict(inclusive, exclusiveMinimum=True) if version.startswith("3.0") else {"type": "number", "exclusiveMinimum": 3}
+        changes.append(("minimum-exclusive", inclusive, exclusive, 1, 0))
+        changes.append(("minimum-inclusive", exclusive, inclusive, 0, 1))
         for direction in ("request", "response"):
             for label, before, after, request_exit, response_exit in changes:
                 expected = request_exit if direction == "request" else response_exit
@@ -87,15 +107,25 @@ def main():
             ours_operations = sorted({(x["http_method"], x["path"]) for x in ours_report["findings"]})
             reference_operations = sorted({(x["operation"], x["path"]) for x in reference_report if x["level"] == 3})
             findings = ours_report["findings"]
+            # v1.35.0 treats a 3.1 numeric exclusiveMinimum -> minimum switch
+            # as a separate bound addition/removal. Instance inclusion permits
+            # these two directions; preserve and test the disagreement.
+            known_difference = name in {"3.1.1/request/minimum-inclusive", "3.1.1/response/minimum-exclusive"}
+            reference_expected = 1 if known_difference else expected
             results.append({"case": name, "input_formats": [before_format, after_format],
                             "expected_exit": expected, "ours_exit": ours_exit, "reference_exit": reference_exit,
+                            "reference_expected_exit": reference_expected,
+                            "documented_difference": "3.1 numeric exclusivity is classified as separate bound addition/removal" if known_difference else None,
                             "ours_findings": findings, "reference_findings": reference_report,
-                            "passed": ours_exit == reference_exit == expected and ours_operations == reference_operations
+                            "passed": ours_exit == expected and reference_exit == reference_expected
+                            and ours_operations == ([("POST", "/orders")] if expected else [])
+                            and reference_operations == ([("POST", "/orders")] if reference_expected else [])
                             and all(x["rule_id"] in {"request-schema-narrowed", "response-schema-widened"} for x in findings)})
     differences = [r for r in results if not r["passed"]]
     report = {"reference_version": REFERENCE_VERSION, "reference_commit": REFERENCE_COMMIT,
-              "reference_options": SCHEMA_OPTIONS, "scope": "schema-type-enum-required-items-composition",
+              "reference_options": SCHEMA_OPTIONS, "scope": "schema-type-enum-required-items-composition-bounds",
               "semantic_cases": len(scenarios), "total": len(results), "passed": len(results) - len(differences),
+              "documented_differences": sum(r["documented_difference"] is not None for r in results),
               "cases": results, "differences": differences}
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("oasdiff {} Schema reference: {}/{} cases passed".format(REFERENCE_VERSION, report["passed"], report["total"]))

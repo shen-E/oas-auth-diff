@@ -25,6 +25,14 @@ pub fn parse_specification(
     legacy_document_url(source),
   )
   let diagnostics = []
+  if !version.has_prefix("3.0.") &&
+    !contract_dialect(fields.get("jsonSchemaDialect")) {
+    diagnostics.push({
+      code: "contract.dialect",
+      message: "Custom JSON Schema dialect assertions are not interpreted by the compatibility solver",
+      location: { uri: source, pointer: "/jsonSchemaDialect", },
+    })
+  }
   let operations = []
   let budget = { count: 0, nodes: 0, legacy: version.has_prefix("3.0."), }
   let location : Location = { uri: source, pointer: "", }

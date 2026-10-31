@@ -1,5 +1,22 @@
 # Example pairs
 
+`bounds.before.yaml` accepts export requests with a limit up to 100, labels up to
+80 characters and up to 20 field names. `bounds.after.json` tightens each request
+limit and widens the integer response from 100 to 200. `breaking` returns exit 1
+with request and response instance witnesses:
+
+```sh
+oas-auth-diff breaking cases/bounds.before.yaml cases/bounds.after.json --format json
+```
+
+`dialect.yaml` uses an explicitly registered 2020-12 extension for field
+classification. Its `x-sensitivity` annotation must be `public` or `private`.
+Changing it to `secret` produces a validation violation at the field location:
+
+```sh
+oas-auth-diff validate cases/dialect.yaml --dialect https://example.test/sensitivity=cases/sensitivity.json
+```
+
 `orders.before.yaml` requires both `orders:read` and `orders:write`.
 `orders.after.json` removes the write requirement. Comparing them returns exit
 code 1 and a witness with the account credential and only the read scope.

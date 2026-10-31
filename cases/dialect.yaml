@@ -1,0 +1,12 @@
+openapi: 3.1.1
+info: {title: Classified fields, version: '1'}
+jsonSchemaDialect: https://example.test/sensitivity
+paths: {}
+components:
+  schemas:
+    Session:
+      type: object
+      properties:
+        token:
+          type: string
+          x-sensitivity: private
