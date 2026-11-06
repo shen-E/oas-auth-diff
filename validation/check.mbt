@@ -180,7 +180,12 @@ pub fn validate(
       )
     }
     walk.visit(document, { uri: source, pointer: "", }, "root", dialect, 0)
-    semantic_checks(document, source, violations)
+    semantic_checks(document, source, {
+      resolver,
+      violations,
+      diagnostics,
+      remaining: 250000,
+    })
     if violations.length() > 1000 {
       if !diagnostics.any(d => d.code == "resource.validation-results") {
         diagnostics.push({
