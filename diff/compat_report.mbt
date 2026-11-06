@@ -129,6 +129,7 @@ pub fn render_compatibility_sarif(
       {
         "driver": {
           "name": "oas-auth-diff",
+          "version": tool_version,
           "rules": Json(
             @compat.checks().map(id => {
               let rule : Json = { "id": id }
