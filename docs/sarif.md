@@ -78,8 +78,15 @@ supply both fields.
 The output format and identity rules are verified locally. GitHub's documented
 [fingerprint handling](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#data-for-preventing-duplicated-alerts)
 and [custom-fingerprint guidance](https://github.com/github/codeql-action/issues/986)
-describe ingestion; this release has not uploaded repeated analyses to verify
-server-side alert matching.
+describe ingestion.
+
+The [first example upload](https://github.com/shen-E/oas-auth-diff/actions/runs/42199863492)
+and [repeated upload](https://github.com/shen-E/oas-auth-diff/actions/runs/42200190914)
+each sent one authorization result and one compatibility result from the same
+commit. GitHub accepted all four analyses and retained alert numbers 1 and 2
+after the repeated run. Input paths, categories and checkout commit were held
+constant. The manual `OpenAPI reports` workflow reproduces this pair of uploads
+using the intentionally regressing order/label fixtures.
 
 ## Keep the comparison exit code
 
