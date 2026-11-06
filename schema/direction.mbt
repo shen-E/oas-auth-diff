@@ -2,11 +2,12 @@
 /// Neutral keeps JSON Schema requiredness. Request/Response use directional
 /// requiredness: read-only fields are optional in requests, write-only fields
 /// are optional in responses. Present values still obey their Schema.
+#derive(Eq, Debug)
 pub(all) enum Direction {
   Neutral
   Request
   Response
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Direction with Eq::{equal, not_equal}

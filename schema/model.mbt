@@ -1,7 +1,8 @@
 ///|
+#derive(Debug)
 pub suberror SchemaError {
   SchemaError(String)
-} derive(Debug)
+}
 
 ///|
 pub extend SchemaError with Debug::{to_repr}
@@ -40,11 +41,12 @@ pub struct Schema {
 ///|
 /// An exclusion is returned only with a value accepted by the source and
 /// rejected by the target. Unknown never represents a compatibility proof.
+#derive(Debug)
 pub(all) enum Inclusion {
   Included
   Excluded(Json)
   Unknown(String)
-} derive(Debug)
+}
 
 ///|
 pub extend Inclusion with Debug::{to_repr}

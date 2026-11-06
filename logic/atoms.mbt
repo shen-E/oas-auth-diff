@@ -1,11 +1,12 @@
 ///|
 /// A positive permission fact. Scope and role facts also establish possession
 /// of the named credential; no hierarchy between scope or role names is inferred.
+#derive(Eq, Debug)
 pub(all) enum Atom {
   Credential(String)
   Scope(String, String)
   Role(String, String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Atom with Eq::{equal, not_equal}
@@ -16,9 +17,10 @@ pub extend Atom with Debug::{to_repr}
 ///|
 /// A closed set of positive permission facts. Construction and accessors copy
 /// arrays so callers cannot change the facts after construction.
+#derive(Eq, Debug)
 pub struct GrantSet {
   priv facts : Array[Atom]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend GrantSet with Eq::{equal, not_equal}

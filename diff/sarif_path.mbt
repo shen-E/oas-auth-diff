@@ -5,9 +5,10 @@ pub struct SarifSourceRoot {
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror SarifError {
   InvalidSourceRoot(String)
-} derive(Debug)
+}
 
 ///|
 pub extend SarifError with Debug::{to_repr}

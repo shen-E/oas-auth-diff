@@ -3,6 +3,7 @@ package "shen-E/oas-auth-diff/openapi"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "shen-E/oas-auth-diff/logic",
 }
 
@@ -20,9 +21,10 @@ pub fn parse_with_loader(String, format~ : InputFormat, source~ : String, load~ 
 pub fn path_identity(String) -> String?
 
 // Errors
+#derive(Eq, @debug.Debug)
 pub(all) suberror DocumentError {
   DocumentError(String)
-} derive(Eq, @debug.Debug)
+}
 pub fn DocumentError::equal(Self, Self) -> Bool
 pub fn DocumentError::not_equal(Self, Self) -> Bool
 pub fn DocumentError::output(Self, &Logger) -> Unit
@@ -30,10 +32,11 @@ pub fn DocumentError::to_repr(Self) -> @debug.Repr
 pub fn DocumentError::to_string(Self) -> String
 pub impl Show for DocumentError
 
+#derive(@debug.Debug)
 pub(all) suberror PairError {
   Before(DocumentError)
   After(DocumentError)
-} derive(@debug.Debug)
+}
 pub fn PairError::output(Self, &Logger) -> Unit
 pub fn PairError::to_repr(Self) -> @debug.Repr
 pub fn PairError::to_string(Self) -> String
@@ -48,29 +51,32 @@ pub struct BodyContract {
 }
 pub fn BodyContract::same_remainder(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) struct Diagnostic {
   code : String
   message : String
   location : Location
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn Diagnostic::equal(Self, Self) -> Bool
 pub fn Diagnostic::not_equal(Self, Self) -> Bool
-pub fn Diagnostic::to_json(Self) -> Json
+pub fn Diagnostic::to_json(Self) -> @json.Json
 pub fn Diagnostic::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct Document {
   source : String
   document_url : String?
   operations : Array[Operation]
   schemes : Array[Scheme]
   diagnostics : Array[Diagnostic]
-} derive(@debug.Debug)
+}
 pub fn Document::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct DocumentPair {
   before : Document
   after : Document
-} derive(@debug.Debug)
+}
 pub fn DocumentPair::to_repr(Self) -> @debug.Repr
 
 pub struct HeaderContract {
@@ -83,21 +89,23 @@ pub struct HeaderContract {
 }
 pub fn HeaderContract::same_remainder(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum InputFormat {
   Json
   Yaml
-} derive(Eq, @debug.Debug)
+}
 pub fn InputFormat::equal(Self, Self) -> Bool
 pub fn InputFormat::not_equal(Self, Self) -> Bool
 pub fn InputFormat::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) struct Location {
   uri : String
   pointer : String
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn Location::equal(Self, Self) -> Bool
 pub fn Location::not_equal(Self, Self) -> Bool
-pub fn Location::to_json(Self) -> Json
+pub fn Location::to_json(Self) -> @json.Json
 pub fn Location::to_repr(Self) -> @debug.Repr
 
 pub struct MediaContract {
@@ -108,6 +116,7 @@ pub struct MediaContract {
 }
 pub fn MediaContract::same_remainder(Self, Self) -> Bool
 
+#derive(@debug.Debug)
 pub(all) struct Operation {
   http_method : String
   path : String
@@ -117,7 +126,7 @@ pub(all) struct Operation {
   security_location : Location
   schemes : Array[String]
   scheme_identities : Array[Scheme]
-} derive(@debug.Debug)
+}
 pub fn Operation::to_repr(Self) -> @debug.Repr
 
 pub struct OperationContract {
@@ -136,7 +145,7 @@ pub struct ParameterContract {
   name : String
   position : String
   required : Bool
-  definition : Json
+  definition : @json.Json
   location : Location
   schema : SchemaContract?
   // private fields
@@ -148,9 +157,9 @@ pub struct ReferenceResolver {
   // private fields
 }
 pub fn ReferenceResolver::new(SourceDocument, load? : ((String, String) -> SourceDocument raise DocumentError)?) -> Self raise DocumentError
-pub fn ReferenceResolver::resolve(Self, String, Location) -> Result[(Json, Location), Diagnostic]
-pub fn ReferenceResolver::resolve_schema(Self, String, Location) -> Result[(Json, Location), Diagnostic]
-pub fn ReferenceResolver::root(Self) -> Json
+pub fn ReferenceResolver::resolve(Self, String, Location) -> Result[(@json.Json, Location), Diagnostic]
+pub fn ReferenceResolver::resolve_schema(Self, String, Location) -> Result[(@json.Json, Location), Diagnostic]
+pub fn ReferenceResolver::root(Self) -> @json.Json
 
 pub struct ResponseContract {
   status : String
@@ -162,18 +171,19 @@ pub struct ResponseContract {
 pub fn ResponseContract::same_remainder(Self, Self) -> Bool
 
 pub struct SchemaContract {
-  definition : Json
+  definition : @json.Json
   location : Location
 }
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) struct Scheme {
   name : String
   fingerprint : String
   location : Location
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn Scheme::equal(Self, Self) -> Bool
 pub fn Scheme::not_equal(Self, Self) -> Bool
-pub fn Scheme::to_json(Self) -> Json
+pub fn Scheme::to_json(Self) -> @json.Json
 pub fn Scheme::to_repr(Self) -> @debug.Repr
 
 pub struct Snapshot {
@@ -182,13 +192,14 @@ pub struct Snapshot {
   // private fields
 }
 pub fn Snapshot::changes(Self, Self) -> Array[ValueChange]
-pub fn Snapshot::to_json(Self) -> Json
+pub fn Snapshot::to_json(Self) -> @json.Json
 
+#derive(Eq, @debug.Debug)
 pub(all) struct SourceDocument {
   text : String
   format : InputFormat
   source : String
-} derive(Eq, @debug.Debug)
+}
 pub fn SourceDocument::equal(Self, Self) -> Bool
 pub fn SourceDocument::not_equal(Self, Self) -> Bool
 pub fn SourceDocument::to_repr(Self) -> @debug.Repr
@@ -201,15 +212,16 @@ pub struct Specification {
   // private fields
 }
 pub fn Specification::same_remainder(Self, Self) -> Bool
-pub fn Specification::to_json(Self) -> Json
+pub fn Specification::to_json(Self) -> @json.Json
 
+#derive(@debug.Debug, @json.ToJson)
 pub(all) struct ValueChange {
   kind : String
   pointer : String
-  before : Json?
-  after : Json?
-} derive(ToJson, @debug.Debug)
-pub fn ValueChange::to_json(Self) -> Json
+  before : @json.Json?
+  after : @json.Json?
+}
+pub fn ValueChange::to_json(Self) -> @json.Json
 pub fn ValueChange::to_repr(Self) -> @debug.Repr
 
 // Type aliases

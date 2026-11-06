@@ -2,9 +2,10 @@
 /// A disjunction of conjunctions of positive authorization facts.
 /// An empty conjunction permits anonymous access; no alternatives denies all.
 /// Alternatives are closed over credential possession and canonically reduced.
+#derive(Eq, Debug)
 pub struct Policy {
   priv clauses : Array[Array[Atom]]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Policy with Eq::{equal, not_equal}

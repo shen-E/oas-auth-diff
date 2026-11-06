@@ -1,5 +1,6 @@
 ///|
 /// A confirmed client compatibility break within the declared contract profile.
+#derive(Debug, ToJson)
 pub(all) struct Finding {
   rule_id : String
   http_method : String
@@ -9,7 +10,7 @@ pub(all) struct Finding {
   message : String
   location : @openapi.Location
   witness : Json?
-} derive(Debug, ToJson)
+}
 
 ///|
 pub extend Finding with Debug::{to_repr}

@@ -1,5 +1,6 @@
 ///|
 /// The relation between the permissions accepted by two operation declarations.
+#derive(Debug, Eq)
 pub(all) enum ChangeKind {
   Equivalent
   Strengthened
@@ -8,7 +9,7 @@ pub(all) enum ChangeKind {
   Added
   Removed
   Incomparable
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend ChangeKind with Debug::{to_repr}
@@ -17,6 +18,7 @@ pub extend ChangeKind with Debug::{to_repr}
 pub extend ChangeKind with Eq::{equal, not_equal}
 
 ///|
+#derive(Debug)
 pub(all) struct OperationChange {
   http_method : String
   path : String
@@ -28,12 +30,13 @@ pub(all) struct OperationChange {
   after : @logic.Policy?
   witness : @logic.GrantSet?
   location : @openapi.Location
-} derive(Debug)
+}
 
 ///|
 pub extend OperationChange with Debug::{to_repr}
 
 ///|
+#derive(Debug)
 pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
@@ -42,7 +45,7 @@ pub(all) struct Comparison {
   after_source : String?
   before_document_url : String?
   after_document_url : String?
-} derive(Debug)
+}
 
 ///|
 pub extend Comparison with Debug::{to_repr}

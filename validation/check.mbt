@@ -1,10 +1,11 @@
 ///|
+#derive(Debug, ToJson)
 pub(all) struct Violation {
   keyword : String
   message : String
   location : @openapi.Location
   schema_pointer : String
-} derive(Debug, ToJson)
+}
 
 ///|
 pub extend Violation with Debug::{to_repr}
