@@ -1,0 +1,64 @@
+name: Registry consumers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published module version
+        required: true
+        default: "0.14.0"
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      MODULE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MoonBit (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s latest
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+          "$HOME/.moon/bin/moon" update
+      - name: Install MoonBit (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://cli.moonbitlang.com/install/powershell.ps1 -OutFile "$env:RUNNER_TEMP/install-moonbit.ps1"
+          & "$env:RUNNER_TEMP/install-moonbit.ps1"
+          "$env:USERPROFILE/.moon/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$env:USERPROFILE/.moon/bin/moon.exe" update
+      - name: Consume the registry library and CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:MODULE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a release version' }
+          $consumerDir = Join-Path $env:RUNNER_TEMP 'registry-consumer'
+          $installDir = Join-Path $env:RUNNER_TEMP 'registry-bin'
+          New-Item -ItemType Directory -Path $consumerDir -Force | Out-Null
+          Copy-Item -LiteralPath examples/library/moon.mod,examples/library/moon.pkg,examples/library/consumer_test.mbt -Destination $consumerDir
+          Push-Location -LiteralPath $consumerDir
+          moon add "shen-E/oas-auth-diff@$env:MODULE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Registry add failed' }
+          moon test --target all
+          if ($LASTEXITCODE -ne 0) { throw 'Registry library checks failed' }
+          moon install "shen-E/oas-auth-diff/cmd/oas-auth-diff@$env:MODULE_VERSION" --bin $installDir
+          if ($LASTEXITCODE -ne 0) { throw 'Registry CLI install failed' }
+          Pop-Location
+          $command = Join-Path $installDir 'oas-auth-diff'
+          if ($IsWindows) { $command += '.exe' }
+          $env:OAS_AUTH_DIFF_VERSION = $env:MODULE_VERSION
+          python cmd/oas-auth-diff/smoke.py $command
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI checks failed' }

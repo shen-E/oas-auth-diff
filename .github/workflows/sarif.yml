@@ -1,0 +1,56 @@
+name: OpenAPI reports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: openapi-reports-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s latest
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+          "$HOME/.moon/bin/moon" update
+      - run: moon install ./cmd/oas-auth-diff --bin "$PWD/_build/bin"
+      - name: Analyze the example changes
+        shell: bash
+        run: |
+          cli=_build/bin/oas-auth-diff
+          if [ ! -x "$cli" ]; then cli="$cli.exe"; fi
+          mkdir -p _build/reports
+          auth_status=0
+          "$cli" compare cases/orders.before.yaml cases/orders.after.json \
+            --format sarif --source-root "$PWD" > _build/reports/auth.sarif || auth_status=$?
+          schema_status=0
+          "$cli" breaking cases/labels.before.yaml cases/labels.after.json \
+            --format sarif --source-root "$PWD" > _build/reports/compatibility.sarif || schema_status=$?
+          test "$auth_status" -eq 1
+          test "$schema_status" -eq 1
+      - name: Upload authorization findings
+        uses: github/codeql-action/upload-sarif@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
+        with:
+          sarif_file: _build/reports/auth.sarif
+          category: oas-auth-diff/example-auth
+          wait-for-processing: true
+      - name: Upload compatibility findings
+        uses: github/codeql-action/upload-sarif@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
+        with:
+          sarif_file: _build/reports/compatibility.sarif
+          category: oas-auth-diff/example-compatibility
+          wait-for-processing: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openapi-sarif
+          path: _build/reports/*.sarif
