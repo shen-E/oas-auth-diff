@@ -50,7 +50,7 @@ jobs:
           New-Item -ItemType Directory -Path $consumerDir -Force | Out-Null
           Copy-Item -LiteralPath examples/library/moon.mod,examples/library/moon.pkg,examples/library/consumer_test.mbt -Destination $consumerDir
           Push-Location -LiteralPath $consumerDir
-          moon add "shen-E/oas-auth-diff@$env:MODULE_VERSION"
+          moon add --upgrade "shen-E/oas-auth-diff@$env:MODULE_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Registry add failed' }
           moon test --target all
           if ($LASTEXITCODE -ne 0) { throw 'Registry library checks failed' }
