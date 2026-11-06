@@ -21,7 +21,7 @@ credential and the read scope. This makes the reason for a CI failure inspectabl
 ## Install and compare
 
 Use a current MoonBit toolchain. This version is tested with
-`moon 0.1.20261023` / `moonc v0.10.17`; CI records its toolchain version.
+`moon 0.1.20261104` / `moonc v0.10.20`; CI records its toolchain version.
 
 ```sh
 git clone https://github.com/shen-E/oas-auth-diff.git
@@ -84,18 +84,27 @@ files themselves are explicitly selected inputs and need not lie inside
 
 ## Use the library
 
-The v0.13.0 package is prepared for release; it has not been uploaded to
-Mooncakes. Until publication, place the consumer module and this checkout in
-a separate parent directory, then create a workspace there:
+Add the library dependency and import the packages used by your application:
+
+```sh
+moon add shen-E/oas-auth-diff@0.14.0
+moon install shen-E/oas-auth-diff/cmd/oas-auth-diff@0.14.0
+```
+
+The [library consumer](examples/library) exercises the six portable packages.
+The [registry workflow](.github/workflows/registry.yml) downloads the published
+module in a fresh directory, tests its libraries on all four backends, installs
+the native CLI and runs the CLI cases on Windows, macOS and Linux.
+
+For local development, place the consumer module and this checkout in
+a separate parent directory, then create a workspace:
 
 ```sh
 moon work init consumer oas-auth-diff
 ```
 
-Declare `shen-E/oas-auth-diff@0.13.0` in `consumer/moon.mod`; the workspace resolves
-it to the checkout. After release, the registry dependency will be
-`shen-E/oas-auth-diff@0.13.0` and the CLI package will be
-`shen-E/oas-auth-diff/cmd/oas-auth-diff@0.13.0`.
+Declare `shen-E/oas-auth-diff@0.14.0` in `consumer/moon.mod`; the workspace resolves
+it to the checkout.
 
 Import `shen-E/oas-auth-diff/openapi` and `shen-E/oas-auth-diff/diff` in your
 package. Parse each document with `parse_document(text, format=Json)`
@@ -200,4 +209,10 @@ The smoke check locates the built executable. CI runs the portable
 library tests on all four backends and the native CLI checks on three operating
 systems. Tests include an exhaustive small-model oracle for policy implication.
 
+See the [walkthrough](docs/walkthrough.md) for reproducible document, authorization,
+compatibility and validation commands. The manual OpenAPI reports workflow
+uploads two example SARIF categories; production gates should preserve the CLI
+exit code as shown in [SARIF in CI](docs/sarif.md).
+
 Apache-2.0. Dependencies and adapted examples retain their upstream licenses.
+Release changes are recorded in the [changelog](CHANGELOG.md).

@@ -35,15 +35,17 @@ pub fn render_text(Comparison) -> String
 pub fn render_validation_sarif(@validation.Report, source_root? : SarifSourceRoot?) -> String
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror SarifError {
   InvalidSourceRoot(String)
-} derive(@debug.Debug)
+}
 pub fn SarifError::output(Self, &Logger) -> Unit
 pub fn SarifError::to_repr(Self) -> @debug.Repr
 pub fn SarifError::to_string(Self) -> String
 pub impl Show for SarifError
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) enum ChangeKind {
   Equivalent
   Strengthened
@@ -52,11 +54,12 @@ pub(all) enum ChangeKind {
   Added
   Removed
   Incomparable
-} derive(Eq, @debug.Debug)
+}
 pub fn ChangeKind::equal(Self, Self) -> Bool
 pub fn ChangeKind::not_equal(Self, Self) -> Bool
 pub fn ChangeKind::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct Comparison {
   changes : Array[OperationChange]
   diagnostics : Array[@openapi.Diagnostic]
@@ -65,10 +68,11 @@ pub(all) struct Comparison {
   after_source : String?
   before_document_url : String?
   after_document_url : String?
-} derive(@debug.Debug)
+}
 pub fn Comparison::exit_code(Self) -> Int32
 pub fn Comparison::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct OperationChange {
   http_method : String
   path : String
@@ -80,7 +84,7 @@ pub(all) struct OperationChange {
   after : @logic.Policy?
   witness : @logic.GrantSet?
   location : @openapi.Location
-} derive(@debug.Debug)
+}
 pub fn OperationChange::to_repr(Self) -> @debug.Repr
 
 pub struct SarifSourceRoot {

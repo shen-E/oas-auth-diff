@@ -1,9 +1,10 @@
 ///|
 /// The two supported OpenAPI document encodings.
+#derive(Debug, Eq)
 pub(all) enum InputFormat {
   Json
   Yaml
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend InputFormat with Debug::{to_repr}
@@ -14,11 +15,12 @@ pub extend InputFormat with Eq::{equal, not_equal}
 ///|
 /// One independently encoded source returned by a local document loader.
 /// `source` is its canonical identity, used for locations, caching and cycles.
+#derive(Debug, Eq)
 pub(all) struct SourceDocument {
   text : String
   format : InputFormat
   source : String
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend SourceDocument with Debug::{to_repr}
@@ -28,10 +30,11 @@ pub extend SourceDocument with Eq::{equal, not_equal}
 
 ///|
 /// A document URI and an RFC 6901 JSON Pointer. No line is fabricated.
+#derive(Debug, Eq, ToJson)
 pub(all) struct Location {
   uri : String
   pointer : String
-} derive(Debug, Eq, ToJson)
+}
 
 ///|
 pub extend Location with Debug::{to_repr}
@@ -43,11 +46,12 @@ pub extend Location with Eq::{equal, not_equal}
 pub extend Location with ToJson::{to_json}
 
 ///|
+#derive(Debug, Eq, ToJson)
 pub(all) struct Diagnostic {
   code : String
   message : String
   location : Location
-} derive(Debug, Eq, ToJson)
+}
 
 ///|
 pub extend Diagnostic with Debug::{to_repr}
@@ -60,11 +64,12 @@ pub extend Diagnostic with ToJson::{to_json}
 
 ///|
 /// A named credential fingerprint. Operation identities include effective bases.
+#derive(Debug, Eq, ToJson)
 pub(all) struct Scheme {
   name : String
   fingerprint : String
   location : Location
-} derive(Debug, Eq, ToJson)
+}
 
 ///|
 pub extend Scheme with Debug::{to_repr}
@@ -78,6 +83,7 @@ pub extend Scheme with ToJson::{to_json}
 ///|
 /// An operation's effective security, after inheritance and relevant references.
 /// `None` means analysis failed; it never represents anonymous access.
+#derive(Debug)
 pub(all) struct Operation {
   http_method : String
   path : String
@@ -88,38 +94,41 @@ pub(all) struct Operation {
   schemes : Array[String]
   // Resolved identities for comparison; definitions alone can retain relative URLs.
   scheme_identities : Array[Scheme]
-} derive(Debug)
+}
 
 ///|
 pub extend Operation with Debug::{to_repr}
 
 ///|
+#derive(Debug)
 pub(all) struct Document {
   source : String
   document_url : String?
   operations : Array[Operation]
   schemes : Array[Scheme]
   diagnostics : Array[Diagnostic]
-} derive(Debug)
+}
 
 ///|
 pub extend Document with Debug::{to_repr}
 
 ///|
 /// Two independently parsed snapshots with peer-required scheme identities.
+#derive(Debug)
 pub(all) struct DocumentPair {
   before : Document
   after : Document
-} derive(Debug)
+}
 
 ///|
 pub extend DocumentPair with Debug::{to_repr}
 
 ///|
+#derive(Debug)
 pub(all) suberror PairError {
   Before(DocumentError)
   After(DocumentError)
-} derive(Debug)
+}
 
 ///|
 pub extend PairError with Debug::{to_repr}
@@ -141,9 +150,10 @@ pub impl Show for PairError with fn output(self, logger) {
 pub extend PairError with Show::{output}
 
 ///|
+#derive(Debug, Eq)
 pub(all) suberror DocumentError {
   DocumentError(String)
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend DocumentError with Debug::{to_repr}

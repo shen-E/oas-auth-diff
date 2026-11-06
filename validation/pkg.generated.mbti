@@ -3,6 +3,7 @@ package "shen-E/oas-auth-diff/validation"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "shen-E/oas-auth-diff/openapi",
 }
 
@@ -11,7 +12,7 @@ pub fn render_json(Report) -> String
 
 pub fn render_text(Report) -> String
 
-pub fn validate(String, format~ : @openapi.InputFormat, source? : String, load? : ((String, String) -> @openapi.SourceDocument raise @openapi.DocumentError)?, dialects? : Map[String, Json]) -> Report raise @openapi.DocumentError
+pub fn validate(String, format~ : @openapi.InputFormat, source? : String, load? : ((String, String) -> @openapi.SourceDocument raise @openapi.DocumentError)?, dialects? : Map[String, @json.Json]) -> Report raise @openapi.DocumentError
 
 // Errors
 
@@ -26,13 +27,14 @@ pub(all) struct Report {
 }
 pub fn Report::exit_code(Self) -> Int32
 
+#derive(@debug.Debug, @json.ToJson)
 pub(all) struct Violation {
   keyword : String
   message : String
   location : @openapi.Location
   schema_pointer : String
-} derive(ToJson, @debug.Debug)
-pub fn Violation::to_json(Self) -> Json
+}
+pub fn Violation::to_json(Self) -> @json.Json
 pub fn Violation::to_repr(Self) -> @debug.Repr
 
 // Type aliases

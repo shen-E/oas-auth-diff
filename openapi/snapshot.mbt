@@ -12,12 +12,13 @@ pub fn Snapshot::to_json(self : Snapshot) -> Json {
 }
 
 ///|
+#derive(Debug, ToJson)
 pub(all) struct ValueChange {
   kind : String
   pointer : String
   before : Json?
   after : Json?
-} derive(Debug, ToJson)
+}
 
 ///|
 pub extend ValueChange with Debug::{to_repr}

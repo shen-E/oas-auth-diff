@@ -3,6 +3,7 @@ package "shen-E/oas-auth-diff/compat"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "shen-E/oas-auth-diff/openapi",
 }
 
@@ -23,6 +24,7 @@ pub(all) struct Comparison {
 }
 pub fn Comparison::exit_code(Self) -> Int32
 
+#derive(@debug.Debug, @json.ToJson)
 pub(all) struct Finding {
   rule_id : String
   http_method : String
@@ -31,9 +33,9 @@ pub(all) struct Finding {
   position : String?
   message : String
   location : @openapi.Location
-  witness : Json?
-} derive(ToJson, @debug.Debug)
-pub fn Finding::to_json(Self) -> Json
+  witness : @json.Json?
+}
+pub fn Finding::to_json(Self) -> @json.Json
 pub fn Finding::to_repr(Self) -> @debug.Repr
 
 // Type aliases

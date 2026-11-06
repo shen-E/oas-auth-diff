@@ -10,27 +10,30 @@ import {
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) enum Atom {
   Credential(String)
   Scope(String, String)
   Role(String, String)
-} derive(Eq, @debug.Debug)
+}
 pub fn Atom::equal(Self, Self) -> Bool
 pub fn Atom::not_equal(Self, Self) -> Bool
 pub fn Atom::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct GrantSet {
   // private fields
-} derive(Eq, @debug.Debug)
+}
 pub fn GrantSet::atoms(Self) -> Array[Atom]
 pub fn GrantSet::equal(Self, Self) -> Bool
 pub fn GrantSet::new(Array[Atom]) -> Self
 pub fn GrantSet::not_equal(Self, Self) -> Bool
 pub fn GrantSet::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct Policy {
   // private fields
-} derive(Eq, @debug.Debug)
+}
 pub fn Policy::allows(Self, GrantSet) -> Bool
 pub fn Policy::alternatives(Self) -> Array[Array[Atom]]
 pub fn Policy::anonymous() -> Self

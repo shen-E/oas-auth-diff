@@ -45,6 +45,7 @@ pub fn render_validation_sarif(
       {
         "driver": {
           "name": "oas-auth-diff",
+          "version": tool_version,
           "rules": Json(
             ids.map(id => {
               let value : Json = { "id": id }

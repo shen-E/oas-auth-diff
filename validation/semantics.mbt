@@ -15,7 +15,9 @@ fn semantic_issue(
   keyword : String,
   message : String,
 ) -> Unit {
-  violations.push({ keyword, message, location: at, schema_pointer: "", })
+  if violations.length() <= 1000 {
+    violations.push({ keyword, message, location: at, schema_pointer: "", })
+  }
 }
 
 ///|
@@ -23,15 +25,21 @@ fn security_names(
   value : Json?,
   at : @openapi.Location,
   schemes : Map[String, Json],
-  violations : Array[Violation],
+  context : SemanticContext,
 ) -> Unit {
   if value is Some(Array(requirements)) {
     for index, requirement in requirements {
+      if !context.spend(at) {
+        return
+      }
       if requirement is Object(fields) {
         for name in fields.keys() {
+          if !context.spend(at) {
+            return
+          }
           if !schemes.contains(name) {
             semantic_issue(
-              violations,
+              context.violations,
               location_key(location_key(at, index.to_string()), name),
               "securityScheme",
               "Security requirement names an undeclared security scheme: " +
@@ -48,37 +56,38 @@ fn security_names(
 fn parameter_list(
   value : Json?,
   at : @openapi.Location,
-  violations : Array[Violation],
+  context : SemanticContext,
 ) -> (Map[(String, String), Bool], Bool) {
   let result = Map([])
   let mut complete = true
   if value is Some(Array(parameters)) {
     for index, parameter in parameters {
-      if parameter is Object(fields) {
-        if fields.contains("$ref") {
-          complete = false
-          continue
-        }
-        if fields.get("name") is Some(String(name)) &&
-          fields.get("in") is Some(String(position)) {
-          let key = (
-            position,
-            if position == "header" {
-              name.to_lower()
-            } else {
-              name
-            },
-          )
-          if result.contains(key) {
-            semantic_issue(
-              violations,
-              location_key(at, index.to_string()),
-              "parameterIdentity",
-              "Duplicate parameter identity: " + position + " " + name,
+      if !context.spend(at) {
+        return (result, false)
+      }
+      match context.target(parameter, location_key(at, index.to_string())) {
+        Some((fields, _)) =>
+          if fields.get("name") is Some(String(name)) &&
+            fields.get("in") is Some(String(position)) {
+            let key = (
+              position,
+              if position == "header" {
+                name.to_lower()
+              } else {
+                name
+              },
             )
+            if result.contains(key) {
+              semantic_issue(
+                context.violations,
+                location_key(at, index.to_string()),
+                "parameterIdentity",
+                "Duplicate parameter identity: " + position + " " + name,
+              )
+            }
+            result[key] = true
           }
-          result[key] = true
-        }
+        None => complete = false
       }
     }
   }
@@ -89,7 +98,7 @@ fn parameter_list(
 fn semantic_checks(
   value : Json,
   source : String,
-  violations : Array[Violation],
+  context : SemanticContext,
 ) -> Unit {
   let root = match value {
     Object(fields) => fields
@@ -108,7 +117,7 @@ fn semantic_checks(
     root.get("security"),
     location_key(at, "security"),
     schemes,
-    violations,
+    context,
   )
   let paths = match root.get("paths") {
     Some(Object(paths)) => paths
@@ -118,18 +127,22 @@ fn semantic_checks(
   let keys = paths.keys().collect()
   keys.sort()
   for path in keys {
+    if !context.spend(at) {
+      return
+    }
     if path.has_prefix("x-") {
       continue
     }
-    let item = match paths[path] {
-      Object(item) => item
-      _ => continue
+    let entry_at = location_key(location_key(at, "paths"), path)
+    let (item, item_at) = match
+      context.target(paths[path], entry_at, path_item=true) {
+      Some(target) => target
+      None => continue
     }
-    let item_at = location_key(location_key(at, "paths"), path)
     let (inherited, path_complete) = parameter_list(
       item.get("parameters"),
       location_key(item_at, "parameters"),
-      violations,
+      context,
     )
     for
       verb in [
@@ -137,10 +150,13 @@ fn semantic_checks(
       ] {
       if item.get(verb) is Some(Object(operation)) {
         let operation_at = location_key(item_at, verb)
+        if !context.spend(operation_at) {
+          return
+        }
         if operation.get("operationId") is Some(String(id)) {
           if ids.contains(id) {
             semantic_issue(
-              violations,
+              context.violations,
               location_key(operation_at, "operationId"),
               "operationId",
               "operationId must be unique: " + id,
@@ -152,14 +168,14 @@ fn semantic_checks(
           operation.get("security"),
           location_key(operation_at, "security"),
           schemes,
-          violations,
+          context,
         )
         let (declared, operation_complete) = parameter_list(
           operation.get("parameters"),
           location_key(operation_at, "parameters"),
-          violations,
+          context,
         )
-        if path_complete && operation_complete && !item.contains("$ref") {
+        if path_complete && operation_complete {
           let mut start = None
           for index in 0..<path.length() {
             if path[index] == '{' {
@@ -169,7 +185,7 @@ fn semantic_checks(
               if !inherited.contains(("path", name)) &&
                 !declared.contains(("path", name)) {
                 semantic_issue(
-                  violations,
+                  context.violations,
                   location_key(operation_at, "parameters"),
                   "pathParameter",
                   "Path template has no corresponding parameter: " + name,

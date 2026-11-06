@@ -11,7 +11,13 @@ oas-auth-diff validate cases/dialect.yaml --dialect https://example.test/sensiti
 `validate` loads strict JSON or YAML and checks OpenAPI objects against the
 bundled official metaschemas. It also checks unique operation IDs, declared
 security scheme names, duplicate parameters within declaration lists and missing
-path-template parameters on literal `paths` operations. It reports syntax
+path-template parameters on `paths` operations. Path Item and parameter reference
+chains are resolved through the same bounded source graph before these checks.
+Operation overrides remain separate from duplicate entries within one list;
+resolved violations retain the target origin or the duplicate declaration site.
+The cross-object pass allows 250000 visits and reference chains of length 128.
+Path Item references with concrete siblings require an explicit merge policy
+and make validation incomplete. It reports syntax
 violations independently of the assertions the compatibility solver can prove.
 For example, a valid `pattern` declaration can pass validation while `breaking`
 cannot classify its change.
@@ -67,7 +73,7 @@ Input Schema `$id` resource scopes, `$dynamicRef` and `$recursiveRef` remain
 incomplete. Pointer targets and referrers nested under `$id` also return a diagnostic
 rather than bypassing that resource boundary. No file base is guessed.
 Validation does not check service behavior, every OpenAPI prose requirement or
-cross relationships through callback/webhook and referenced parameter graphs.
+cross relationships through callback/webhook operation graphs.
 Use `breaking` for supported client contracts and `compare` for authorization.
 
 ## Dialects and bundled resources

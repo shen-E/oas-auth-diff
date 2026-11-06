@@ -1,0 +1,8 @@
+import {
+  "shen-E/oas-auth-diff/logic",
+  "shen-E/oas-auth-diff/openapi",
+  "shen-E/oas-auth-diff/schema",
+  "shen-E/oas-auth-diff/compat",
+  "shen-E/oas-auth-diff/validation",
+  "shen-E/oas-auth-diff/diff",
+} for "test"

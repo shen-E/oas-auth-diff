@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -41,7 +42,9 @@ def main():
             return json.loads(result.stdout)
         return result.stdout
 
-    assert "0.13.0" in invoke(["--version"], 0)
+    expected_version = os.environ.get("OAS_AUTH_DIFF_VERSION") or re.search(
+        r'^version\s*=\s*"([^"]+)"', (root / "moon.mod").read_text(encoding="utf-8"), re.MULTILINE).group(1)
+    assert expected_version in invoke(["--version"], 0)
     assert "compare BEFORE AFTER" in invoke(["--help"], 0)
     before = cases / "orders.before.yaml"
     after = cases / "orders.after.json"
@@ -61,6 +64,7 @@ def main():
     sarif = invoke(["compare", before, after], 1, format="sarif")
     assert sarif["version"] == "2.1.0"
     run = sarif["runs"][0]
+    assert run["tool"]["driver"]["version"] == expected_version
     assert run["invocations"][0]["executionSuccessful"] is True
     assert run["results"][0]["ruleId"] == "auth-regression"
     location = run["results"][0]["locations"][0]
@@ -926,6 +930,7 @@ def main():
             if output_format == "json":
                 assert report["valid"] is False and report["violations"]
             elif output_format == "sarif":
+                assert report["runs"][0]["tool"]["driver"]["version"] == expected_version
                 assert report["runs"][0]["results"] and report["runs"][0]["invocations"][0]["executionSuccessful"]
         report = invoke(["validate", path, "--source-root", directory], 1, format="sarif")
         artifact = report["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
@@ -989,6 +994,8 @@ def main():
             assert anchored["complete"] and anchored["findings"][0]["witness_verified"]
             assert anchored["findings"][0]["location"]["pointer"] == "/components/schemas/Label"
             assert anchored["schema_semantics"]["pattern"] == "bounded-bmp-positive-regular-language"
+        elif output_format == "sarif":
+            assert anchored["runs"][0]["tool"]["driver"]["version"] == expected_version
         invoke(["validate", cases / "labels.before.yaml"], 0, format=output_format)
     invoke(["breaking", cases / "labels.after.json", cases / "labels.before.yaml"], 0, format="json")
 
@@ -1001,6 +1008,29 @@ def main():
             path.write_text(json.dumps(document), encoding="utf-8")
             invoke(["validate", path], 2, format="json")
             invoke(["breaking", path, path], 2, format="json")
+
+    with tempfile.TemporaryDirectory(prefix="oas-semantic-refs-") as directory:
+        directory = Path(directory)
+        path = directory / "api.json"
+        item = directory / "item.json"
+        parameter = directory / "id.yaml"
+        entry = {"openapi": "3.1.1", "info": {"title": "References", "version": "1"},
+                 "paths": {"/orders/{id}": {"$ref": "item.json"}}}
+        concrete = {"parameters": [{"$ref": "id.yaml"}],
+                    "get": {"responses": {"200": {"description": "ok"}}}}
+        path.write_text(json.dumps(entry), encoding="utf-8")
+        item.write_text(json.dumps(concrete), encoding="utf-8")
+        parameter.write_text("name: id\nin: path\nrequired: true\nschema: {type: string}\n", encoding="utf-8")
+        invoke(["validate", path, "--local-refs"], 0, format="json")
+        parameter.write_text("name: other\nin: path\nrequired: true\nschema: {type: string}\n", encoding="utf-8")
+        for output_format in ("text", "json", "sarif"):
+            result = invoke(["validate", path, "--local-refs"], 1, format=output_format)
+            if output_format == "json":
+                assert any(v["keyword"] == "pathParameter" and v["location"]["uri"].endswith("/item.json")
+                           for v in result["violations"])
+        parameter.unlink()
+        result = invoke(["validate", path, "--local-refs"], 2, format="json")
+        assert not any(v["keyword"] == "pathParameter" for v in result["violations"])
 
     print(f"CLI smoke: {checks} subprocess checks passed")
 
